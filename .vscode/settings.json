@@ -1,0 +1,17 @@
+{
+    "files.associations": {
+        "atomic": "cpp",
+        "chrono": "cpp",
+        "*.tcc": "cpp",
+        "array": "cpp",
+        "string": "cpp",
+        "string_view": "cpp",
+        "random": "cpp",
+        "cstdlib": "cpp",
+        "type_traits": "cpp",
+        "*.ipp": "cpp",
+        "ostream": "cpp",
+        "iosfwd": "cpp",
+        "cstddef": "cpp"
+    }
+}

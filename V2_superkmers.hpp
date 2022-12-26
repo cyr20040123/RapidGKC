@@ -1,7 +1,11 @@
+#ifndef _SUPERKMERS_HPP
+#define _SUPERKMERS_HPP
+
 #include <mutex>
 #include <vector>
 #include <cstring>
 #include "types.h"
+#include <iostream>
 using namespace std;
 
 class SKMStoreNoncon {
@@ -11,14 +15,18 @@ public:
     vector<const byte*> skm_chunks;
     
     // compression
-    vector<size_t> skm_chunk_uncompressed_bytes; // uncompressed bytes of batches
+    // vector<size_t> skm_chunk_uncompressed_bytes; // uncompressed bytes of batches
     vector<size_t> skm_chunk_compressed_bytes;
-    vector<const void*> skm_chunks_compressed;
+    // vector<const byte*> skm_chunks_compressed;
     
     mutex vec_mtx;
     size_t tot_size_bytes = 0;
+    size_t tot_size_compressed = 0;
     size_t skm_cnt = 0;
     size_t kmer_cnt = 0;
+
+    mutex dl_mtx;
+    vector<const byte*> delete_list;
     
     SKMStoreNoncon () {}
     /// @brief add skms directly from a chunk
@@ -29,13 +37,13 @@ public:
     void add_skms (const byte* skms_chunk, size_t data_bytes, size_t b_skm_cnt, size_t b_kmer_cnt, size_t compressed_bytes = 0, bool emplace = true) {
         vec_mtx.lock();
         if (compressed_bytes) {
-            if (emplace) skm_chunks_compressed.push_back(skms_chunk);
+            if (emplace) skm_chunks.push_back(skms_chunk);
             else {
                 byte* new_cskm = new byte [compressed_bytes];
                 memcpy(new_cskm, skms_chunk, compressed_bytes * sizeof(byte));
-                skm_chunks_compressed.push_back(skms_chunk);
+                skm_chunks.push_back(skms_chunk);
             }
-            skm_chunk_uncompressed_bytes.push_back(data_bytes);
+            skm_chunk_bytes.push_back(data_bytes);
             skm_chunk_compressed_bytes.push_back(compressed_bytes);
         } else {
             if (emplace) skm_chunks.push_back(skms_chunk);
@@ -46,13 +54,25 @@ public:
             }
             skm_chunk_bytes.push_back(data_bytes);
         }
-        tot_size_bytes += compressed_bytes == 0 ? data_bytes : compressed_bytes;
+        tot_size_bytes += data_bytes;
+        tot_size_compressed += compressed_bytes;
         this->skm_cnt += b_skm_cnt;
         this->kmer_cnt += b_kmer_cnt;
         vec_mtx.unlock();
     }
     bool is_compressed() {return skm_chunk_compressed_bytes.size();}
+    void clear_skm_data () {
+        for (auto i:delete_list) delete i;
+    }
 
+    /// @brief for uncompressed skms saving, do not support delete in advance
+    /// @param skms_stores SKMStoreNoncon * N_Partitions
+    /// @param skm_cnt number of skms of each partition
+    /// @param kmer_cnt number of kmers of each partition
+    /// @param skmpart_offs offset of each skm partition
+    /// @param skm_store_csr skm partitions in csr format
+    /// @param skmpart_compressed_bytes compressed size in bytes of each skm partition
+    /// @param emplace True: store the pointers only. Do not copy.
     static void save_batch_skms (vector<SKMStoreNoncon*> &skms_stores, T_skm_partsize *skm_cnt, T_skm_partsize *kmer_cnt, T_CSR_cap *skmpart_offs, byte *skm_store_csr, size_t *skmpart_compressed_bytes = nullptr, bool emplace = true) {
         // memory layout of skm_store_csr:
         // [<part0><part1><part2><...>]
@@ -66,4 +86,27 @@ public:
                 skms_stores[i]->add_skms(&skm_store_csr[skmpart_offs[i]], skmpart_offs[i+1]-skmpart_offs[i], skm_cnt[i], kmer_cnt[i], skmpart_compressed_bytes[i], emplace);
         }
     }
+
+    // for compressed skms saving
+    static void save_batch_skms (vector<SKMStoreNoncon*> &skms_stores, T_skm_partsize *skm_cnt, T_skm_partsize *kmer_cnt, byte **skm_data, size_t *skmpart_uncompressed_bytes, size_t *skmpart_compressed_bytes = nullptr, bool emplace = true) {
+        int i;
+        int SKM_partitions = skms_stores.size();
+        if (skmpart_compressed_bytes == nullptr) {
+            for (i=0; i<SKM_partitions; i++) {
+                skms_stores[i]->add_skms(skm_data[i], skmpart_uncompressed_bytes[i], skm_cnt[i], kmer_cnt[i], 0, emplace);
+                skms_stores[i]->dl_mtx.lock();
+                skms_stores[i]->delete_list.push_back(skm_data[i]);
+                skms_stores[i]->dl_mtx.unlock();
+            }
+        } else {// for GPU-compressed data, use new size (skmpart_compressed_sizes)
+            for (i=0; i<SKM_partitions; i++) {
+                skms_stores[i]->add_skms(skm_data[i], skmpart_uncompressed_bytes[i], skm_cnt[i], kmer_cnt[i], skmpart_compressed_bytes[i], emplace);
+                skms_stores[i]->dl_mtx.lock();
+                skms_stores[i]->delete_list.push_back(skm_data[i]);
+                skms_stores[i]->dl_mtx.unlock();
+            }
+        }
+    }
 };
+
+#endif

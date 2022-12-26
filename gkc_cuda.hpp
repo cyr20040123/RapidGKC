@@ -16,6 +16,7 @@ while((call) != cudaSuccess) { \
 }
 
 #include "types.h"
+#include "V2_superkmers.hpp"
 #include <vector>
 #include <thread>
 #include <atomic>
@@ -32,7 +33,7 @@ struct CUDAParams {
 
 class PinnedCSR { // for one-time use only
 public:
-    char* reads_CSR; // TODO: make it int32
+    char* reads_CSR;
     T_CSR_cap* reads_offs;
     T_read_cnt n_reads;
     T_CSR_cap size_capacity; // bytes = char unit
@@ -57,7 +58,8 @@ void GPUReset (int did);
 
 void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
     const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams gpars, CountTask task,
-    const int SKM_partitions, std::function<void(T_h_data)> process_func
+    const int SKM_partitions, vector<SKMStoreNoncon*> skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
+    bool GPU_compression
     /*atomic<size_t> skm_part_sizes[]*/);
 
 #endif

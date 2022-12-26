@@ -9,6 +9,7 @@ using namespace std;
 size_t kmc_counting_GPU (T_kvalue k,
     SKMStoreNoncon &skms_store, int gpuid,
     unsigned short kmer_min_freq, unsigned short kmer_max_freq,
-    _out_ vector<T_kmc> &kmc_result_curthread);
+    _out_ vector<T_kmc> &kmc_result_curthread,
+    bool GPU_compression);
 
 #endif

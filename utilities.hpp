@@ -119,6 +119,11 @@ public:
     T_read_cnt Batch_read_loading = 2000;
     size_t Buffer_fread_size_MB = 20;
 
+    int grid_size = 8;
+    int block_size = 256;
+
+    bool GPU_compression = false;
+
     void ArgParser(int argc, char* argvs[]);
 } PAR;
 

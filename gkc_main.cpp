@@ -39,8 +39,8 @@ void calVarStdev(vector<size_t> &vecNums) // calc avg max min var std cv (Coeffi
 /// @brief Will be called in file loading
 /// @param reads 
 /// @param gpars 
-/// @param skm_partitions 
-void process_reads_count(vector<ReadPtr> &reads, CUDAParams gpars, vector<SKMStoreNoncon*> &skm_partitions) {
+/// @param skm_partition_stores 
+void process_reads_count(vector<ReadPtr> &reads, CUDAParams gpars, vector<SKMStoreNoncon*> &skm_partition_stores) {
     sort(reads.begin(), reads.end(), sort_comp); // TODO: remove and compare the performance
     stringstream ss;
     ss << "----\tBATCH\tn_reads = " << reads.size() << "\tmin_len = " << reads.begin()->len << "\tmax_len = " << reads.rbegin()->len <<"\t----";
@@ -48,10 +48,10 @@ void process_reads_count(vector<ReadPtr> &reads, CUDAParams gpars, vector<SKMSto
     PinnedCSR pinned_reads(reads);
     logger->log("Pinned: "+to_string(pinned_reads.get_n_reads())+" size = "+to_string(pinned_reads.size_capacity));
     
-    function<void(T_h_data)> process_func = [&skm_partitions](T_h_data hd) {
-        SKMStoreNoncon::save_batch_skms (skm_partitions, hd.skm_cnt, hd.kmer_cnt, hd.skmpart_offs, hd.skm_store_csr, nullptr, true);
-    };
-    GenSuperkmerGPU (pinned_reads, PAR.K_kmer, PAR.P_minimizer, false, gpars, CountTask::SKMPartition, PAR.SKM_partitions, process_func);
+    // function<void(T_h_data)> process_func = [&skm_partition_stores](T_h_data hd) {
+    //     SKMStoreNoncon::save_batch_skms (skm_partition_stores, hd.skm_cnt, hd.kmer_cnt, hd.skmpart_offs, hd.skm_store_csr, nullptr, true);
+    // };
+    GenSuperkmerGPU (pinned_reads, PAR.K_kmer, PAR.P_minimizer, false, gpars, CountTask::SKMPartition, PAR.SKM_partitions, skm_partition_stores, PAR.GPU_compression);
 }
 
 void GPUKmerCounting_TP(CUDAParams gpars) {
@@ -65,10 +65,13 @@ void GPUKmerCounting_TP(CUDAParams gpars) {
     logger->log("**** Phase 1: Loading and generate superkmers ****", Logger::LV_NOTICE);
     WallClockTimer wct1;
     
-    ReadLoader::work_while_loading_V2(
-        [gpars, &skm_part_vec](vector<ReadPtr> &reads){process_reads_count(reads, gpars, skm_part_vec);},
-        2, PAR.read_files[0], PAR.Batch_read_loading, true, PAR.Buffer_fread_size_MB*ReadLoader::MB
-    );
+    for (auto readfile:PAR.read_files) {
+        ReadLoader::work_while_loading_V2(
+            [gpars, &skm_part_vec](vector<ReadPtr> &reads){process_reads_count(reads, gpars, skm_part_vec);},
+            2, PAR.read_files[0], PAR.Batch_read_loading, true, PAR.Buffer_fread_size_MB*ReadLoader::MB
+        );
+        logger->log("-- ["+readfile+"] processed --", Logger::LV_NOTICE);
+    }
     
     double p1_time = wct1.stop();
     logger->log("**** All reads loaded and SKMs generated (Phase 1 ends) ****", Logger::LV_NOTICE);
@@ -99,7 +102,7 @@ void GPUKmerCounting_TP(CUDAParams gpars) {
 
     for (i=0; i<PAR.SKM_partitions; i++) {
         distinct_kmer_cnt[i] = tp.commit_task([&skm_part_vec, &gpars, &kmc_result, i] () {
-            return kmc_counting_GPU (PAR.K_kmer, *(skm_part_vec[i]), gpars.device_id, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[i]);
+            return kmc_counting_GPU (PAR.K_kmer, *(skm_part_vec[i]), gpars.device_id, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[i], PAR.GPU_compression);
         });
     }
     tp.finish();
@@ -135,8 +138,8 @@ int main (int argc, char** argvs) {
     CUDAParams gpars;
     gpars.device_id = 0;
     gpars.n_streams = 6;
-    gpars.NUM_BLOCKS_PER_GRID = 8;
-    gpars.NUM_THREADS_PER_BLOCK = 256;
+    gpars.NUM_BLOCKS_PER_GRID = PAR.grid_size;
+    gpars.NUM_THREADS_PER_BLOCK = PAR.block_size;
 
     GPUReset(gpars.device_id); // must before not after pinned memory allocation
 

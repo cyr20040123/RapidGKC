@@ -9,6 +9,9 @@ if((call) != cudaSuccess) { \
 
 #define NULL_POS 0xFFFFFFFFFFFFFFFFUL
 
+#include "nvcomp/gdeflate.hpp"
+#include "nvcomp.hpp"
+
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 #include <thrust/sort.h>
@@ -25,6 +28,7 @@ if((call) != cudaSuccess) { \
 #include <vector>
 #include <fstream>
 using namespace std;
+using namespace nvcomp;
 
 struct sameasprev {
     sameasprev() {}
@@ -134,14 +138,6 @@ __global__ void GPU_Extract_Kmers (byte* d_skms, size_t tot_bytes, T_kmer *d_kme
             _process_bytes(beg_byte_pos, end_byte_pos, d_skms, d_kmers, d_kmer_store_pos, k);
         }
     }
-    // if (i<tot_bytes) { // process the remainder bytes at the end
-    //     // printf("i: %llu\n",i);
-    //     beg_byte_pos = _find_full_nonfull_pos(i, tot_bytes, d_skms);
-    //     if (beg_byte_pos < tot_bytes) {
-    //         // printf("%llu process %llu %llu (%d %llu)\n",tot_bytes, beg_byte_pos, tot_bytes, tid, i);
-    //         _process_bytes(beg_byte_pos, tot_bytes, d_skms, d_kmers, d_kmer_store_pos, k);
-    //     }
-    // }
     return;
 }
 
@@ -167,17 +163,16 @@ __global__ void GPU_Extract_Kmers_test (byte* d_skms, size_t tot_bytes, T_kmer *
 }
 #endif
 
-void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kmers, int BpG=8, int TpB=256) {
+void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kmers, cudaStream_t &stream, int BpG=8, int TpB=256) {
+    // cudaStream_t stream;
+    // CUDA_CHECK(cudaStreamCreate(&stream));
+    
     byte* d_skms;
-    cudaStream_t stream;
-    CUDA_CHECK(cudaStreamCreate(&stream));
+    CUDA_CHECK(cudaMallocAsync((void**) &(d_skms), skms_store.tot_size_bytes, stream));
     
     unsigned long long *d_kmer_store_pos;
-    CUDA_CHECK(cudaMallocAsync((void**) &(d_skms), skms_store.tot_size_bytes, stream));
-    // CUDA_CHECK(cudaMallocAsync((void**) &(d_kmers), skms_store.kmer_cnt * sizeof(T_kmer), stream));
     CUDA_CHECK(cudaMallocAsync((void**) &(d_kmer_store_pos), sizeof(size_t), stream));
     CUDA_CHECK(cudaMemsetAsync(d_kmer_store_pos, 0, sizeof(unsigned long long), stream));
-    // CUDA_CHECK(cudaStreamSynchronize(stream));
     
     // ---- copy skm chunks H2D ----
     int i;
@@ -187,7 +182,55 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kme
         d_store_pos += skms_store.skm_chunk_bytes[i];
     }
     // ---- GPU work ----
-    GPU_Extract_Kmers<<<BpG, TpB, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k); //BUG
+    GPU_Extract_Kmers<<<BpG, TpB, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
+    // GPU_Extract_Kmers_test<<<BpG, TpB, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
+    
+    CUDA_CHECK(cudaFreeAsync(d_skms, stream));
+    // CUDA_CHECK(cudaFreeAsync(d_kmers, stream));
+    CUDA_CHECK(cudaFreeAsync(d_kmer_store_pos, stream));
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+    return;
+}
+
+void Extract_Kmers_Compressed (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kmers, cudaStream_t &stream, int BpG=8, int TpB=256, int gpuid = 0) {
+    cerr<<"Uncompressed: "<<skms_store.tot_size_bytes<<"\tCompressed: "<<skms_store.tot_size_compressed<<endl;
+    cerr<<"Ratio: "<<(double)skms_store.tot_size_compressed / (double)skms_store.tot_size_bytes<<endl;
+    // cudaStream_t stream;
+    // CUDA_CHECK(cudaStreamCreate(&stream));
+    
+    byte* d_skms; // uncompressed skms
+    CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes));
+    
+    unsigned long long *d_kmer_store_pos;
+    CUDA_CHECK(cudaMallocAsync((void**) &(d_kmer_store_pos), sizeof(size_t), stream));
+    CUDA_CHECK(cudaMemsetAsync(d_kmer_store_pos, 0, sizeof(unsigned long long), stream));
+    
+    // decompression
+    const int chunk_size = 1 << 16;
+    GdeflateManager nvcomp_manager(chunk_size, 0, stream, gpuid);
+    size_t num_buffers = skms_store.skm_chunk_bytes.size();
+    size_t i;
+    vector<byte*> decomp_result_buffers(num_buffers);
+    byte* decompress_pos = d_skms;
+    const byte* comp_data[num_buffers];
+    for(i = 0; i < num_buffers; i++) {
+        CUDA_CHECK(cudaMallocAsync((void **)&comp_data[i], skms_store.skm_chunk_compressed_bytes[i], stream));
+        CUDA_CHECK(cudaMemcpyAsync((void*)comp_data[i], skms_store.skm_chunks[i], skms_store.skm_chunk_compressed_bytes[i], cudaMemcpyHostToDevice, stream));
+        auto decomp_config = nvcomp_manager.configure_decompression(comp_data[i]);
+        nvcomp_manager.decompress(decompress_pos, comp_data[i], decomp_config);
+        decompress_pos += skms_store.skm_chunk_bytes[i];
+    }
+    for(i = 0; i < num_buffers; i++)
+        cudaFreeAsync((void*)comp_data[i], stream);
+
+    // // ---- copy skm chunks H2D ----
+    // byte *d_store_pos = d_skms;
+    // for (i=0; i<skms_store.skm_chunk_bytes.size(); i++) {
+    //     CUDA_CHECK(cudaMemcpyAsync(d_store_pos, skms_store.skm_chunks[i], skms_store.skm_chunk_bytes[i], cudaMemcpyHostToDevice, stream));
+    //     d_store_pos += skms_store.skm_chunk_bytes[i];
+    // }
+    // ---- GPU work ----
+    GPU_Extract_Kmers<<<BpG, TpB, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
     // GPU_Extract_Kmers_test<<<BpG, TpB, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
     
     CUDA_CHECK(cudaFreeAsync(d_skms, stream));
@@ -200,11 +243,14 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kme
 __host__ size_t kmc_counting_GPU (T_kvalue k,
                                SKMStoreNoncon &skms_store, int gpuid,
                                unsigned short kmer_min_freq, unsigned short kmer_max_freq,
-                               _out_ vector<T_kmc> &kmc_result_curthread) {
+                               _out_ vector<T_kmc> &kmc_result_curthread,
+                               bool GPU_compression = false) {
     // using CUDA Thrust
     // size_t est_kmer = skms_store.tot_size - skms_store.skms.size_approx() * (k-1);
     // size_t db_skm = skms_store.skms.size_approx();
     // size_t est_skm = 0;
+    cudaStream_t stream;
+    CUDA_CHECK(cudaStreamCreate(&stream));
     
     // 0. Extract kmers from SKMStore: (~65-85% time)
     #ifdef TIMER
@@ -224,7 +270,8 @@ __host__ size_t kmc_counting_GPU (T_kvalue k,
     // cout<<"Begin extract kmer"<<endl;
     thrust::device_vector<T_kmer> kmers_d(skms_store.kmer_cnt);
     T_kmer *d_kmers_data = thrust::raw_pointer_cast(kmers_d.data());
-    Extract_Kmers(skms_store, k, d_kmers_data, 8, 256);
+    if (GPU_compression) Extract_Kmers_Compressed(skms_store, k, d_kmers_data, stream, 8, 256, gpuid);
+    else Extract_Kmers(skms_store, k, d_kmers_data, stream, 8, 256);
     tot_kmers = kmers_d.size();
     // cerr<<"End extract kmer "<<tot_kmers<<" "<<skms_store.kmer_cnt<<endl;
     // cerr<<est_kmer<<"|"<<db_skm<<"|"<<est_skm<<"|"<<tot_kmers<<endl;
@@ -237,15 +284,15 @@ __host__ size_t kmc_counting_GPU (T_kvalue k,
     WallClockTimer wct1;
     #endif
     thrust::constant_iterator<T_kvalue> ik(k);
-    thrust::transform(thrust::device, kmers_d.begin(), kmers_d.end(), ik, kmers_d.begin(), canonicalkmer());
-    
+    thrust::transform(thrust::device.on(stream), kmers_d.begin(), kmers_d.end(), ik, kmers_d.begin(), canonicalkmer());
     // 2. sort: [ABCBBAC] -> [AABBBCC] (kmers_d) (~5-15% time)
     #ifdef TIMER
     wcts[1] = wct1.stop();
     WallClockTimer wct2;
     #endif
-    thrust::sort(thrust::device, kmers_d.begin(), kmers_d.end()/*, thrust::greater<T_kmer>()*/);
-    thrust::host_vector<T_kmer> sorted_kmers_h = kmers_d;
+    thrust::sort(thrust::device.on(stream), kmers_d.begin(), kmers_d.end()/*, thrust::greater<T_kmer>()*/);
+    skms_store.clear_skm_data();
+    // thrust::host_vector<T_kmer> sorted_kmers_h = kmers_d;
     
     // 3. find changes: [AABBBCC] -> [0,0,1,0,0,1,0] (comp_vec_d)
     // thrust::device_vector<bool> comp_vec_d(kmers_d.size());
@@ -259,7 +306,7 @@ __host__ size_t kmc_counting_GPU (T_kvalue k,
     WallClockTimer wct3;
     #endif
     thrust::device_vector<bool> same_flag_d(kmers_d.size());
-    thrust::transform(thrust::device, kmers_d.begin()+1 /*x beg*/, kmers_d.end() /*x end*/, kmers_d.begin()/*y beg*/, same_flag_d.begin()+1/*res beg*/, sameasprev());
+    thrust::transform(thrust::device.on(stream), kmers_d.begin()+1 /*x beg*/, kmers_d.end() /*x end*/, kmers_d.begin()/*y beg*/, same_flag_d.begin()+1/*res beg*/, sameasprev());
     same_flag_d[0] = 0; //
     
     // 4. remove same idx: [0123456] [0101101] -> [0,2,5] (idx_d)
@@ -268,8 +315,14 @@ __host__ size_t kmc_counting_GPU (T_kvalue k,
     WallClockTimer wct4;
     #endif
     thrust::device_vector<T_read_len> idx_d(kmers_d.size());
-    thrust::sequence(thrust::device, idx_d.begin(), idx_d.end());
-    auto new_end_d = thrust::remove_if(thrust::device, idx_d.begin(), idx_d.end(), same_flag_d.begin(), thrust::identity<bool>()); // new_end_d is an iterator
+    thrust::sequence(thrust::device.on(stream), idx_d.begin(), idx_d.end());
+    auto new_end_idx_d = thrust::remove_if(thrust::device.on(stream), idx_d.begin(), idx_d.end(), same_flag_d.begin(), thrust::identity<bool>()); // new_end_idx_d is an iterator
+    
+    // 4+
+    // thrust::host_vector<T_kmer> sorted_kmers_h = kmers_d;
+    auto new_end_sorted_cleared_kmers_d = thrust::remove_if(thrust::device.on(stream), kmers_d.begin(), kmers_d.end(), same_flag_d.begin(), thrust::identity<bool>()); // new_end_idx_d is an iterator
+    thrust::host_vector<T_kmer> sorted_kmers_h(kmers_d.begin(), new_end_sorted_cleared_kmers_d);
+    volatile T_kmer tmp_kmer = sorted_kmers_h[0];
     
     // 4. replace with index: [0,0,1,0,0,1,0] -> [0,0,2,0,0,5,0] (comp_vec_d)
     // thrust::device_vector<T_read_len> seq_d(kmers_d.size());
@@ -284,7 +337,7 @@ __host__ size_t kmc_counting_GPU (T_kvalue k,
     wcts[4] = wct4.stop();
     WallClockTimer wct5;
     #endif
-    thrust::host_vector<T_read_len> idx_h(idx_d.begin(), new_end_d);
+    thrust::host_vector<T_read_len> idx_h(idx_d.begin(), new_end_idx_d);
     idx_h.push_back(tot_kmers); // [0,2,5] -> [0,2,5,7] A2 B3 C2
     
     #ifdef TIMER
@@ -308,13 +361,6 @@ __host__ size_t kmc_counting_GPU (T_kvalue k,
     cout<<wcts[0]<<"\t"<<wcts[1]<<"\t"<<wcts[2]<<"\t"<<wcts[3]<<"\t"<<wcts[4]<<"\t"<<wcts[5]<<"\t"<<wcts[6]<<endl;
     #endif
     // return total_kmer_cnt; // total kmer
-    delete &skms_store;
-    // if (idx_h.size()-1 == 4386933) {
-    //     ofstream fout("4386933.txt");
-    //     for(i=0; i<idx_h.size()-1; i++) {
-    //         fout<<kmers_d[idx_h[i]]<<" "<<idx_h[i+1]-idx_h[i]<<endl;
-    //     }
-    //     fout.close();
-    // }
+    delete &skms_store;//
     return idx_h.size()-1; // total distinct kmer
 }

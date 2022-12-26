@@ -72,6 +72,9 @@ void GlobalParams::ArgParser(int argc, char* argvs[]) {
         else if (!strcmp(argvs[i], "-log")) log_file_folder = string(argvs[++i]);
         else if (!strcmp(argvs[i], "-fb")) Buffer_fread_size_MB = atoi(argvs[++i]);
         else if (!strcmp(argvs[i], "-rb")) Batch_read_loading = atoi(argvs[++i]);
+        else if (!strcmp(argvs[i], "-grid")) grid_size = atoi(argvs[++i]);
+        else if (!strcmp(argvs[i], "-block")) block_size = atoi(argvs[++i]);
+        else if (!strcmp(argvs[i], "-gc")) GPU_compression = true;
         else if (!strcmp(argvs[i], "-read")) {
             int j;
             for (j=i+1; j<argc; j++, i++) {
@@ -81,12 +84,12 @@ void GlobalParams::ArgParser(int argc, char* argvs[]) {
         }
         else {
             cerr<<"Wrong argument: "<<argvs[i]<<endl;
-            cerr<<"Usage: "<< argvs[0] <<" -t <threads_per_process> -k <K_kmer> -p <P_minimizer> -skm <SKM_partitions> -hpc <HPC> -kf <Kmer_filter> -tmp <tmp_file_folder> -read <read_files...>"<<endl;
+            cerr<<"Usage: "<< argvs[0] <<" -t <threads_per_process> -k <K_kmer> -p <P_minimizer> -skm <SKM_partitions> -hpc <HPC> -tmp <tmp_file_folder> -read <read_files...>"<<endl;
             exit(1);
         }
     }
     if (read_files.size() == 0) {
-        cerr<<"Usage: "<< argvs[0] <<" -t <threads_per_process> -k <K_kmer> -p <P_minimizer> -skm <SKM_partitions> -hpc <HPC> -kf <Kmer_filter> -tmp <tmp_file_folder> -read <read_files...>"<<endl;
+        cerr<<"Usage: "<< argvs[0] <<" -t <threads_per_process> -k <K_kmer> -p <P_minimizer> -skm <SKM_partitions> -hpc <HPC> -tmp <tmp_file_folder> -read <read_files...>"<<endl;
         exit(1);
     }
 }

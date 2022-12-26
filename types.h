@@ -26,7 +26,12 @@ struct ReadPtr {
     T_read_len len;
 };
 
+#ifndef LONGERKMER
 typedef unsigned long long T_kmer;
+#endif
+#ifdef LONGERKMER
+typedef unsigned __int128 T_kmer;
+#endif
 
 typedef unsigned char byte;
 const int BYTE_BASES = 3;
@@ -52,6 +57,9 @@ struct T_h_data {
     size_t tot_skm_bytes;
     _out_ byte *skm_store_csr;
 
+    // Compressed SKMs
+    byte **skm_data;
+    size_t *skmpart_compressed_bytes;
 };
 
 // device data

@@ -108,7 +108,7 @@ private:
         if (remain_pos != string::npos) {////改动
             while (i < remain_pos) {
                 // assert(buf[i] == '@');
-                i = buf.find('\n', i+1); // line end of read info // TODO: save read info
+                i = buf.find('\n', i+1); // line end of read info // TO-DO: save read info
                 j = buf.find('\n', i+1); // line end of read
                 if (buf[j-1] == '\r') j--;
                 #ifdef DEBUG

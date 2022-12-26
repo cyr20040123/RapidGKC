@@ -12,6 +12,8 @@
 #include "utilities.hpp"
 #include <cuda.h>
 #include <cuda_runtime_api.h>
+#include "nvcomp/gdeflate.hpp"
+#include "nvcomp.hpp"
 
 #include <vector>
 #include <string>
@@ -21,6 +23,7 @@
 #include <iostream>
 
 using namespace std;
+using namespace nvcomp;
 
 __device__ __constant__ static const unsigned char d_basemap[256] = {
     255, 255, 255, 255, 255, 255, 255, 255, // 0..7
@@ -295,8 +298,8 @@ __global__ void GPU_GenSKMOffs(
     T_read_len i;
 
     // reset thread-local skm counter and kmer counter
-    T_skm_partsize *p_skm_cnt = new T_skm_partsize[SKM_partitions];   // thread-local: skm cnt of each partition
-    T_skm_partsize *p_kmer_cnt = new T_skm_partsize[SKM_partitions];  // thread-local: kmer cnt of each partition
+    unsigned short *p_skm_cnt = new unsigned short[SKM_partitions];   // thread-local: skm cnt of each partition
+    unsigned short *p_kmer_cnt = new unsigned short[SKM_partitions];  // thread-local: kmer cnt of each partition // TODO: unsigned short may not be large enough, but unsigned int may overflow when SKM_part > 255
     for (i=0; i<SKM_partitions; i++) p_skm_cnt[i] = 0, p_kmer_cnt[i] = 0;
 
     // each thread processes one read at a time
@@ -360,7 +363,7 @@ __global__ void GPU_ReadCompression(_in_ _out_ unsigned char *d_reads, _in_ T_CS
         for (i = threadIdx.x * BYTE_BASES; i - threadIdx.x*BYTE_BASES <= len; i += blockDim.x * BYTE_BASES) { // Coalesced Access
             // why "- threadIdx.x" in ending condition? - To ensure each thread will run the same time for __syncthreads().
             if (i + BYTE_BASES <= len) {
-                // TODO: [experiment] compare with below (check if uchar3 is faster than three single vars)
+                // TO-DO: [experiment] compare with below (check if uchar3 is faster than three single vars)
                 // tmp = (d_basemap[cur_read[i]] << 4) | (d_basemap[cur_read[i+1]] << 2) | (d_basemap[cur_read[i+2]]) | 0b11000000;
                 c4 = *(reinterpret_cast<uchar3*>(&cur_read[i])); // load 3 bases at a time
                 c4.x = d_basemap[c4.x]; c4.y = d_basemap[c4.y]; c4.z = d_basemap[c4.z]; // convert 3 bases to 2-bit
@@ -455,10 +458,68 @@ __host__ void GPUReset(int did) {
     return;
 }
 
+__host__ void SKM_Compression_COMP (const int SKM_partitions, T_h_data host_data, T_d_data gpu_data, cudaStream_t stream, _out_ GdeflateManager *&nvcomp_managers, _out_ std::vector<byte*> &comp_result_buffers) {
+    
+    int i;
+    const size_t num_buffers = SKM_partitions;
+
+    vector<byte*> device_input_ptrs(num_buffers);
+    vector<size_t> input_buffer_lengths(num_buffers);
+
+    for (i=0; i<SKM_partitions; i++) {
+        device_input_ptrs[i] = &(gpu_data.d_skm_store_csr[host_data.skmpart_offs[i]]);
+        input_buffer_lengths[i] = host_data.skm_part_bytes[i];
+    }
+    // multi_comp_decomp_example():
+    // compression:
+    const int chunk_size = 1 << 16;
+    // nvcompType_t data_type = NVCOMP_TYPE_BITS;
+    int device_id = 0;
+    nvcomp_managers = new GdeflateManager(chunk_size, 0, stream, device_id); // high compression option (1) not currently supported
+    for(i = 0; i < num_buffers; i++) {
+        auto comp_config = nvcomp_managers->configure_compression(input_buffer_lengths[i]);
+        CUDA_CHECK(cudaMallocAsync((void**) (&comp_result_buffers[i]), comp_config.max_compressed_buffer_size, stream));
+        nvcomp_managers->compress(device_input_ptrs[i], comp_result_buffers[i], comp_config);
+    }
+    
+    return;
+    // decompression
+    // std::vector<byte*> decomp_result_buffers(num_buffers);
+    // for(size_t ix_buffer = 0; ix_buffer < num_buffers; ++ix_buffer) {
+    //     byte* comp_data = comp_result_buffers[ix_buffer];
+
+    //     auto decomp_config = nvcomp_manager.configure_decompression(comp_data);
+
+    //     CUDA_CHECK(cudaMalloc(&decomp_result_buffers[ix_buffer], decomp_config.decomp_data_size));
+
+    //     nvcomp_manager.decompress(decomp_result_buffers[ix_buffer], comp_data, decomp_config);    
+    // }
+
+    // for (size_t ix_buffer = 0; ix_buffer < num_buffers; ++ix_buffer) {
+    //     CUDA_CHECK(cudaFree(decomp_result_buffers[ix_buffer]));
+    //     CUDA_CHECK(cudaFree(comp_result_buffers[ix_buffer]));
+    // }
+
+}
+
+__host__ void SKM_Compression_COLLECT (GdeflateManager *nvcomp_managers, std::vector<byte*> &comp_result_buffers, const int SKM_partitions, T_h_data host_data, cudaStream_t stream) {
+    int i;
+    size_t compressed_bytes;
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+    for(i = 0; i < SKM_partitions; i++) {
+        compressed_bytes = nvcomp_managers->get_compressed_output_size(comp_result_buffers[i]);
+        host_data.skm_data[i] = new byte[compressed_bytes];
+        host_data.skmpart_compressed_bytes[i] = compressed_bytes;
+        CUDA_CHECK(cudaMemcpyAsync(host_data.skm_data[i], comp_result_buffers[i], compressed_bytes, cudaMemcpyDeviceToHost, stream));
+        CUDA_CHECK(cudaFreeAsync(comp_result_buffers[i], stream));
+    }
+}
+
 // provide pinned_reads from the shortest to the longest read
 __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
     const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams gpars, CountTask task,
-    const int SKM_partitions, std::function<void(T_h_data)> process_func /*must be thread-safe*/
+    const int SKM_partitions, vector<SKMStoreNoncon*> skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
+    bool GPU_compression
     /*atomic<size_t> skm_part_sizes[]*/) {
     
     int time_all=0, time_filter=0;
@@ -547,7 +608,8 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             time_filter += wct2.stop(true);
             #endif
             
-            GPU_GenSKMOffs<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>>(
+            // GPU_GenSKMOffs<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>>(
+            GPU_GenSKMOffs<<<8, 256, 0, streams[i]>>>(
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_len, gpu_data[i].d_read_offs, 
                 gpu_data[i].d_minimizers,
                 gpu_data[i].d_superkmer_offs,
@@ -561,6 +623,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             time_all += wct.stop(true);
             #endif
             
+            // CUDA_CHECK(cudaStreamSynchronize(streams[i+1-1]));
             GPU_ReadCompression<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>>(
                 gpu_data[i].d_reads, gpu_data[i].d_read_offs, gpu_data[i].d_read_len, gpu_data[i].reads_cnt
             );
@@ -569,6 +632,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             host_data[i].skm_part_bytes = new T_skm_partsize[SKM_partitions];
             host_data[i].skm_cnt = new T_skm_partsize[SKM_partitions];
             host_data[i].kmer_cnt = new T_skm_partsize[SKM_partitions];
+            // CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].skm_part_bytes,  gpu_data[i].d_skm_part_bytes,    sizeof(T_skm_partsize) * SKM_partitions, cudaMemcpyDeviceToHost, streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].skm_cnt,         gpu_data[i].d_skm_cnt,           sizeof(T_skm_partsize) * SKM_partitions, cudaMemcpyDeviceToHost, streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].kmer_cnt,        gpu_data[i].d_kmer_cnt,          sizeof(T_skm_partsize) * SKM_partitions, cudaMemcpyDeviceToHost, streams[i]));
@@ -606,15 +670,33 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 gpu_data[i].d_store_pos, gpu_data[i].d_skm_cnt, gpu_data[i].d_skm_store_csr, gpu_data[i].d_skmpart_offs,
                 K_kmer, P_minimizer, SKM_partitions
             );
-            host_data[i].skm_store_csr = new byte[host_data[i].tot_skm_bytes];//
+            // -- Malloc on host for SKM storage --
+            if (!GPU_compression) host_data[i].skm_store_csr = new byte[host_data[i].tot_skm_bytes];
+            else {
+                host_data[i].skm_data = new byte*[SKM_partitions];//
+                host_data[i].skmpart_compressed_bytes = new size_t[SKM_partitions];//
+            }
         }
 
         // ==== Copy SKMs Back to CPU ====
+        if (GPU_compression) {
+            vector<GdeflateManager*> nvcomp_managers(started_streams);
+            vector<vector<byte*>> comp_result_buffers(started_streams);
+            for (i = 0; i < started_streams; i++) {
+                comp_result_buffers[i].resize(SKM_partitions);
+                SKM_Compression_COMP (SKM_partitions, host_data[i], gpu_data[i], streams[i], nvcomp_managers[i], comp_result_buffers[i]);
+            }
+            for (i = 0; i < started_streams; i++) {
+                SKM_Compression_COLLECT (nvcomp_managers[i], comp_result_buffers[i], SKM_partitions, host_data[i], streams[i]);
+            }
+            cerr<<"compressed"<<endl;
+        }
         for (i = 0; i < started_streams; i++) {
-            // -- Malloc on host for temporary result storage --
-            // -- D2H memory copy --
+            // -- Non-compressed SKM collection (D2H) -- 
+            if (!GPU_compression)
+                CUDA_CHECK(cudaMemcpyAsync(host_data[i].skm_store_csr, gpu_data[i].d_skm_store_csr, host_data[i].tot_skm_bytes, cudaMemcpyDeviceToHost, streams[i]));
             
-            // TODO: add if on task to indicate whether to new and D2H
+            // TO-DO: add if on task to indicate whether to new and D2H
             if (HPC) {
                 host_data[i].hpc_orig_pos = new T_read_len[batch_size[i]];
                 host_data[i].read_len = new T_read_len[gpu_data[i].reads_cnt];
@@ -624,7 +706,6 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 CUDA_CHECK(cudaStreamSynchronize(streams[i]));
                 // TOxDO: D2H copy reads and calculate reads_offs
             }
-            CUDA_CHECK(cudaMemcpyAsync(host_data[i].skm_store_csr, gpu_data[i].d_skm_store_csr, host_data[i].tot_skm_bytes, cudaMemcpyDeviceToHost, streams[i]));
             
             // -- Free device memory --
             if (HPC) CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_hpc_orig_pos, streams[i]));
@@ -643,7 +724,11 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
         // ==== CPU Store SKMs ====
         for (i = 0; i < started_streams; i++) {
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
-            process_func(host_data[i]);
+            // process_func(host_data[i]);
+            if (!GPU_compression)
+                SKMStoreNoncon::save_batch_skms (skm_partition_stores, host_data[i].skm_cnt, host_data[i].kmer_cnt, host_data[i].skmpart_offs, host_data[i].skm_store_csr, nullptr, true);
+            else
+                SKMStoreNoncon::save_batch_skms (skm_partition_stores, host_data[i].skm_cnt, host_data[i].kmer_cnt, host_data[i].skm_data, (size_t*)(host_data[i].skm_part_bytes), host_data[i].skmpart_compressed_bytes, true);
             
             // -- clean host variables --
             if (HPC) {
@@ -656,6 +741,10 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             delete [] host_data[i].kmer_cnt;
             delete [] host_data[i].skmpart_offs;
             // delete [] host_data[i].skm_store_csr; // don't delete because it will be used
+            if (GPU_compression) {
+                delete host_data[i].skm_data;//
+                delete [] host_data[i].skmpart_compressed_bytes;//
+            }
         }
     }
     logger->log("FILTER: " STR(FILTER_KERNEL) " Kernel Functions Time: ALL = "+to_string(time_all)+"ms FILTER = "+to_string(time_filter)+"ms");

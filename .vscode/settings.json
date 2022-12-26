@@ -12,6 +12,15 @@
         "*.ipp": "cpp",
         "ostream": "cpp",
         "iosfwd": "cpp",
-        "cstddef": "cpp"
+        "cstddef": "cpp",
+        "deque": "cpp",
+        "list": "cpp",
+        "vector": "cpp",
+        "forward_list": "cpp",
+        "unordered_map": "cpp",
+        "unordered_set": "cpp",
+        "initializer_list": "cpp",
+        "regex": "cpp",
+        "valarray": "cpp"
     }
 }

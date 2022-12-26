@@ -13620,3 +13620,684 @@ read count = 779
 (12-23 17:58:05) P0 [DEBUG]	Total number of distinct kmers: 135435562
 (12-23 17:58:05) P0 [NOTICE]	**** Kmer counting finished (Phase 2 ends) ****
 (12-23 17:58:05) P0 [INFO]	     Phase 2 Time: 1.752000 sec
+================================
+(12-27 01:14:36) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:14:39) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:14:39) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:14:39) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:14:39) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:14:39) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:14:40) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:14:40) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:14:40) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:14:40) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:14:40) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:14:40) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:14:40) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:14:40) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:14:41) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:14:41) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:14:41) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:14:41) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:14:41) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:14:41) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:14:41) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:14:41) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:14:41) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:14:41) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:14:41) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:14:41) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:14:41) P0 [INFO]	     Phase 1 Time: 2.091000 sec
+(12-27 01:14:41) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:14:41) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:14:41) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:14:41) P0 [DEBUG]	(with 1 threads)
+(12-27 01:14:42) P0 [DEBUG]	Total number of distinct kmers: 135435562
+(12-27 01:14:42) P0 [NOTICE]	**** Kmer counting finished (Phase 2 ends) ****
+(12-27 01:14:42) P0 [INFO]	     Phase 2 Time: 1.224000 sec
+================================
+(12-27 01:15:18) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:15:19) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:15:19) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:15:19) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:15:19) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:15:19) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:15:19) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:15:19) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:15:19) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:15:19) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:15:19) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:15:19) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:15:19) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:15:19) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:15:19) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:15:19) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:15:19) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:15:19) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:15:19) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:15:19) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:15:19) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:15:19) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:15:19) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:15:19) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:15:19) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:15:19) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:15:19) P0 [INFO]	     Phase 1 Time: 0.829000 sec
+(12-27 01:15:19) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:15:19) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:15:19) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:15:19) P0 [DEBUG]	(with 1 threads)
+(12-27 01:15:21) P0 [DEBUG]	Total number of distinct kmers: 135435562
+(12-27 01:15:21) P0 [NOTICE]	**** Kmer counting finished (Phase 2 ends) ****
+(12-27 01:15:21) P0 [INFO]	     Phase 2 Time: 1.170000 sec
+================================
+(12-27 01:15:26) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:15:26) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:15:27) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:15:27) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:15:27) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:15:27) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:15:27) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:15:27) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:15:27) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:15:27) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:15:27) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:15:27) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:15:27) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:15:27) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:15:27) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:15:27) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:15:27) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:15:27) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:15:27) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:15:27) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:15:27) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:15:27) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:15:27) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:15:27) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:15:27) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:15:27) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:15:27) P0 [INFO]	     Phase 1 Time: 0.969000 sec
+(12-27 01:15:27) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:15:27) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:15:27) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:15:27) P0 [DEBUG]	(with 1 threads)
+(12-27 01:15:29) P0 [DEBUG]	Total number of distinct kmers: 135435562
+(12-27 01:15:29) P0 [NOTICE]	**** Kmer counting finished (Phase 2 ends) ****
+(12-27 01:15:29) P0 [INFO]	     Phase 2 Time: 1.165000 sec
+================================
+(12-27 01:17:16) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:17:16) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:17:16) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:17:17) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:17:17) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:17:17) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:17:17) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:17:17) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:17:17) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:17:17) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:17:17) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:17:17) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:17:17) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:17:17) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:17:17) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:17:17) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:17:17) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:17:17) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:17:17) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:17:17) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:17:17) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:17:17) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:17:17) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:17:17) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:17:17) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:17:17) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:17:17) P0 [INFO]	     Phase 1 Time: 0.822000 sec
+(12-27 01:17:17) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:17:17) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:17:17) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:17:17) P0 [DEBUG]	(with 1 threads)
+(12-27 01:17:18) P0 [DEBUG]	Total number of distinct kmers: 135435562
+(12-27 01:17:18) P0 [NOTICE]	**** Kmer counting finished (Phase 2 ends) ****
+(12-27 01:17:18) P0 [INFO]	     Phase 2 Time: 1.254000 sec
+================================
+(12-27 01:19:40) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:19:41) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:19:41) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:19:41) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:19:41) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:19:41) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:19:41) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:19:41) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:19:41) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:19:41) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:19:41) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:19:41) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:19:41) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:19:41) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:19:41) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:19:41) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:19:41) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:19:41) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:19:41) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:19:41) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:19:41) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:19:41) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:19:41) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:19:42) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:19:42) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:19:42) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:19:42) P0 [INFO]	     Phase 1 Time: 0.870000 sec
+(12-27 01:19:42) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:19:42) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:19:42) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:19:42) P0 [DEBUG]	(with 1 threads)
+(12-27 01:19:43) P0 [DEBUG]	Total number of distinct kmers: 135435562
+(12-27 01:19:43) P0 [NOTICE]	**** Kmer counting finished (Phase 2 ends) ****
+(12-27 01:19:43) P0 [INFO]	     Phase 2 Time: 1.166000 sec
+================================
+(12-27 01:19:49) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:19:50) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:19:50) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:19:50) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:19:50) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:19:50) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:19:50) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:19:50) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:19:50) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:19:50) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:19:50) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:19:50) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:19:50) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:19:50) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:19:50) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:19:50) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:19:50) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:19:50) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:19:50) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:19:50) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:19:50) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:19:50) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:19:50) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:19:51) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:19:51) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:19:51) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:19:51) P0 [INFO]	     Phase 1 Time: 0.843000 sec
+(12-27 01:19:51) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:19:51) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:19:51) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:19:51) P0 [DEBUG]	(with 1 threads)
+(12-27 01:19:52) P0 [DEBUG]	Total number of distinct kmers: 135435562
+(12-27 01:19:52) P0 [NOTICE]	**** Kmer counting finished (Phase 2 ends) ****
+(12-27 01:19:52) P0 [INFO]	     Phase 2 Time: 1.233000 sec
+================================
+(12-27 01:19:55) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:19:56) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:19:56) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:19:56) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:19:56) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:19:56) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:19:56) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:19:56) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:19:56) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:19:56) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:19:56) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:19:56) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:19:56) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:19:56) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:19:56) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:19:56) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:19:56) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:19:56) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:19:56) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:19:56) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:19:56) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:19:56) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:19:56) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:19:56) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:19:56) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:19:56) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:19:56) P0 [INFO]	     Phase 1 Time: 0.945000 sec
+(12-27 01:19:56) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:19:56) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:19:56) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:19:56) P0 [DEBUG]	(with 1 threads)
+(12-27 01:19:58) P0 [DEBUG]	Total number of distinct kmers: 135435562
+(12-27 01:19:58) P0 [NOTICE]	**** Kmer counting finished (Phase 2 ends) ****
+(12-27 01:19:58) P0 [INFO]	     Phase 2 Time: 1.345000 sec
+================================
+(12-27 01:20:30) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:20:31) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:20:31) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:20:31) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:20:31) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:20:31) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:20:31) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:20:31) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:20:31) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:20:31) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:20:31) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:20:31) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:20:31) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:20:31) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:20:31) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:20:31) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:20:31) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:20:31) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:20:31) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:20:31) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:20:32) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:20:32) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:20:32) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:20:32) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:20:32) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:20:32) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:20:32) P0 [INFO]	     Phase 1 Time: 0.931000 sec
+(12-27 01:20:32) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:20:32) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:20:32) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:20:32) P0 [DEBUG]	(with 1 threads)
+(12-27 01:20:33) P0 [DEBUG]	Total number of distinct kmers: 135435562
+(12-27 01:20:33) P0 [NOTICE]	**** Kmer counting finished (Phase 2 ends) ****
+(12-27 01:20:33) P0 [INFO]	     Phase 2 Time: 1.200000 sec
+================================
+(12-27 01:20:38) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:20:38) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:20:38) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:20:38) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:20:38) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:20:38) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:20:39) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:20:39) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:20:39) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:20:39) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:20:39) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:20:39) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:20:39) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:20:39) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:20:39) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:20:39) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:20:39) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:20:39) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:20:39) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:20:39) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:20:39) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:20:39) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:20:39) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:20:39) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:20:39) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:20:39) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:20:39) P0 [INFO]	     Phase 1 Time: 0.859000 sec
+(12-27 01:20:39) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:20:39) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:20:39) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:20:39) P0 [DEBUG]	(with 1 threads)
+(12-27 01:20:40) P0 [DEBUG]	Total number of distinct kmers: 135435562
+(12-27 01:20:40) P0 [NOTICE]	**** Kmer counting finished (Phase 2 ends) ****
+(12-27 01:20:40) P0 [INFO]	     Phase 2 Time: 1.167000 sec
+================================
+(12-27 01:20:43) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:20:44) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:20:44) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:20:44) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:20:44) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:20:44) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:20:44) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:20:44) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:20:44) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:20:44) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:20:44) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:20:44) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:20:44) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:20:44) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:20:44) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:20:44) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:20:44) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:20:44) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:20:44) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:20:44) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:20:44) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:20:44) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:20:44) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:20:45) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:20:45) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:20:45) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:20:45) P0 [INFO]	     Phase 1 Time: 0.908000 sec
+(12-27 01:20:45) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:20:45) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:20:45) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:20:45) P0 [DEBUG]	(with 1 threads)
+(12-27 01:20:46) P0 [DEBUG]	Total number of distinct kmers: 135435562
+(12-27 01:20:46) P0 [NOTICE]	**** Kmer counting finished (Phase 2 ends) ****
+(12-27 01:20:46) P0 [INFO]	     Phase 2 Time: 1.293000 sec
+================================
+(12-27 01:21:42) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:21:43) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:21:43) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:21:43) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:21:43) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:21:43) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:21:43) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:21:43) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:21:43) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:21:43) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:21:43) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:21:43) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:21:43) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:21:43) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:21:43) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:21:43) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:21:43) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:21:43) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:21:43) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:21:43) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:21:43) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:21:43) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:21:43) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:21:43) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:21:43) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:21:43) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:21:43) P0 [INFO]	     Phase 1 Time: 0.850000 sec
+(12-27 01:21:43) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:21:43) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:21:43) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:21:43) P0 [DEBUG]	(with 1 threads)
+(12-27 01:21:45) P0 [DEBUG]	Total number of distinct kmers: 135435562
+(12-27 01:21:45) P0 [NOTICE]	**** Kmer counting finished (Phase 2 ends) ****
+(12-27 01:21:45) P0 [INFO]	     Phase 2 Time: 1.162000 sec
+================================
+(12-27 01:24:12) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:24:12) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:24:12) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:24:13) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:24:13) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:24:13) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:24:13) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:24:13) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:24:13) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:24:13) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:24:13) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:24:13) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:24:13) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:24:13) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:24:13) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:24:13) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:24:13) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:24:13) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:24:13) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:24:13) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:24:13) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:24:13) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:24:13) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:24:13) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:24:13) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:24:13) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:24:13) P0 [INFO]	     Phase 1 Time: 0.928000 sec
+(12-27 01:24:13) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:24:13) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:24:13) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:24:13) P0 [DEBUG]	(with 1 threads)
+================================
+(12-27 01:25:12) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:25:12) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:25:13) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:25:13) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:25:13) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:25:13) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:25:13) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:25:13) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:25:13) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:25:13) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:25:13) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:25:13) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:25:13) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:25:13) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:25:13) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:25:13) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:25:13) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:25:13) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:25:13) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:25:13) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:25:13) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:25:13) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:25:13) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:25:13) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:25:13) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:25:13) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:25:13) P0 [INFO]	     Phase 1 Time: 0.894000 sec
+(12-27 01:25:13) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:25:13) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:25:13) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:25:13) P0 [DEBUG]	(with 1 threads)
+================================
+(12-27 01:26:17) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:26:18) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:26:18) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:26:18) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:26:18) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:26:18) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:26:18) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:26:18) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:26:18) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:26:18) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:26:18) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:26:18) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:26:18) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:26:18) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:26:18) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:26:18) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:26:18) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:26:18) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:26:19) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:26:19) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:26:19) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:26:19) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:26:19) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:26:19) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:26:19) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:26:19) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:26:19) P0 [INFO]	     Phase 1 Time: 0.903000 sec
+(12-27 01:26:19) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:26:19) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:26:19) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:26:19) P0 [DEBUG]	(with 1 threads)
+================================
+(12-27 01:26:31) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:26:31) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:26:32) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:26:32) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:26:32) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:26:32) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:26:32) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:26:32) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:26:32) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:26:32) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:26:32) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:26:32) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:26:32) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:26:32) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:26:32) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:26:32) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:26:32) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:26:32) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:26:32) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:26:32) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:26:32) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:26:32) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:26:32) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:26:32) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:26:32) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:26:32) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:26:32) P0 [INFO]	     Phase 1 Time: 0.840000 sec
+(12-27 01:26:32) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:26:32) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:26:32) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:26:32) P0 [DEBUG]	(with 1 threads)
+================================
+(12-27 01:27:19) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:27:20) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:27:20) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:27:20) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:27:20) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:27:20) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:27:20) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:27:20) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:27:20) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:27:20) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:27:20) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:27:20) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:27:20) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:27:20) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:27:20) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:27:20) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:27:20) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:27:20) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:27:20) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:27:20) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:27:20) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:27:21) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:27:21) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:27:21) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:27:21) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:27:21) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:27:21) P0 [INFO]	     Phase 1 Time: 0.849000 sec
+(12-27 01:27:21) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:27:21) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:27:21) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:27:21) P0 [DEBUG]	(with 1 threads)
+================================
+(12-27 01:28:32) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:28:33) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:28:33) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:28:33) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:28:33) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:28:33) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:28:33) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:28:33) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:28:33) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:28:33) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:28:33) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:28:33) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:28:33) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:28:33) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:28:33) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:28:33) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:28:33) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:28:33) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:28:33) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:28:33) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:28:33) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:28:33) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:28:33) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:28:34) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:28:34) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:28:34) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:28:34) P0 [INFO]	     Phase 1 Time: 0.828000 sec
+(12-27 01:28:34) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:28:34) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:28:34) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:28:34) P0 [DEBUG]	(with 1 threads)
+================================
+(12-27 01:30:11) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:30:12) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:30:12) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:30:12) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:30:12) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:30:12) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:30:12) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:30:12) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:30:12) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:30:12) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:30:12) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:30:12) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:30:12) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:30:13) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:30:13) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:30:13) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:30:13) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:30:13) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:30:13) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:30:13) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:30:13) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:30:13) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:30:13) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:30:13) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:30:13) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:30:13) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:30:13) P0 [INFO]	     Phase 1 Time: 0.860000 sec
+(12-27 01:30:13) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:30:13) P0 [DEBUG]	KMER TOT CNT = 138749517
+================================
+(12-27 01:38:35) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:38:36) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:38:36) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:38:36) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:38:36) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:38:36) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:38:36) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:38:36) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:38:36) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:38:36) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:38:36) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:38:36) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:38:36) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:38:36) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:38:36) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:38:36) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:38:36) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:38:36) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:38:36) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:38:36) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:38:36) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:38:36) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:38:36) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:38:36) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:38:36) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:38:36) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:38:36) P0 [INFO]	     Phase 1 Time: 0.835000 sec
+(12-27 01:38:36) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:38:36) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:38:36) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:38:36) P0 [DEBUG]	(with 1 threads)
+(12-27 01:38:38) P0 [DEBUG]	Total number of distinct kmers: 135435562
+(12-27 01:38:38) P0 [NOTICE]	**** Kmer counting finished (Phase 2 ends) ****
+(12-27 01:38:38) P0 [INFO]	     Phase 2 Time: 1.166000 sec
+================================
+(12-27 01:38:57) P0 [DEBUG]	./test -t 2 -k 28 -p 7 -skm 31 -fb 20 -rb 4096 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(12-27 01:38:57) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(12-27 01:38:57) P0 [DEBUG]	----	BATCH	n_reads = 4969	min_len = 53	max_len = 26227	----
+(12-27 01:38:57) P0 [DEBUG]	Pinned: 4969 size = 41729477
+(12-27 01:38:57) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:38:57) P0 [DEBUG]	----	BATCH	n_reads = 5062	min_len = 52	max_len = 26891	----
+(12-27 01:38:57) P0 [DEBUG]	Pinned: 5062 size = 41741630
+(12-27 01:38:57) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:38:57) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:38:57) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:38:58) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:38:58) P0 [DEBUG]	GPU stream 2:	read count = 873
+(12-27 01:38:58) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:38:58) P0 [DEBUG]	GPU stream 2:	read count = 966
+(12-27 01:38:58) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:38:58) P0 [DEBUG]	----	BATCH	n_reads = 5065	min_len = 56	max_len = 28647	----
+(12-27 01:38:58) P0 [DEBUG]	Pinned: 5065 size = 41723176
+(12-27 01:38:58) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:38:58) P0 [DEBUG]	GPU stream 0:	read count = 2048
+(12-27 01:38:58) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:38:58) P0 [DEBUG]	----	BATCH	n_reads = 1794	min_len = 151	max_len = 26806	----
+(12-27 01:38:58) P0 [DEBUG]	Pinned: 1794 size = 14011264
+(12-27 01:38:58) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:38:58) P0 [DEBUG]	GPU stream 1:	read count = 2048
+(12-27 01:38:58) P0 [DEBUG]	GPU stream 0:	read count = 1794
+(12-27 01:38:58) P0 [DEBUG]	GPU stream 2:	read count = 969
+(12-27 01:38:58) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:38:58) P0 [DEBUG]	FILTER: new_filter2 Kernel Functions Time: ALL = 0ms FILTER = 0ms
+(12-27 01:38:58) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(12-27 01:38:58) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(12-27 01:38:58) P0 [INFO]	     Phase 1 Time: 0.737000 sec
+(12-27 01:38:58) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(12-27 01:38:58) P0 [DEBUG]	KMER TOT CNT = 138749517
+(12-27 01:38:58) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(12-27 01:38:58) P0 [DEBUG]	(with 2 threads)
+(12-27 01:38:59) P0 [DEBUG]	Total number of distinct kmers: 135435562
+(12-27 01:38:59) P0 [NOTICE]	**** Kmer counting finished (Phase 2 ends) ****
+(12-27 01:38:59) P0 [INFO]	     Phase 2 Time: 1.027000 sec

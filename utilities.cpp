@@ -92,5 +92,9 @@ void GlobalParams::ArgParser(int argc, char* argvs[]) {
         cerr<<"Usage: "<< argvs[0] <<" -t <threads_per_process> -k <K_kmer> -p <P_minimizer> -skm <SKM_partitions> -hpc <HPC> -tmp <tmp_file_folder> -read <read_files...>"<<endl;
         exit(1);
     }
+    if (*tmp_file_folder.rbegin() != '/')
+        tmp_file_folder.push_back('/');
+    if (*log_file_folder.rbegin() != '/')
+        log_file_folder.push_back('/');
 }
 

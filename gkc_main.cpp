@@ -59,7 +59,7 @@ void GPUKmerCounting_TP(CUDAParams gpars) {
 
     vector<SKMStoreNoncon*> skm_part_vec;
     int i, tid;
-    for (i=0; i<PAR.SKM_partitions; i++) skm_part_vec.push_back(new SKMStoreNoncon());//
+    for (i=0; i<PAR.SKM_partitions; i++) skm_part_vec.push_back(new SKMStoreNoncon(i));//
     
     // ==== 1st phase: loading and generate superkmers ====
     logger->log("**** Phase 1: Loading and generate superkmers ****", Logger::LV_NOTICE);
@@ -88,7 +88,7 @@ void GPUKmerCounting_TP(CUDAParams gpars) {
 
     // cout<<"Continue? ..."; char tmp; cin>>tmp;
     // GPUReset(gpars.device_id);
-
+    
     // ==== 2nd phase: superkmer extraction and kmer counting ====
     logger->log("**** Phase 2: Superkmer extraction and kmer counting ****", Logger::LV_NOTICE);
     logger->log("(with "+to_string(PAR.N_threads)+" threads)");

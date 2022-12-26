@@ -21,6 +21,8 @@
         "unordered_set": "cpp",
         "initializer_list": "cpp",
         "regex": "cpp",
-        "valarray": "cpp"
+        "valarray": "cpp",
+        "cstdio": "cpp",
+        "fstream": "cpp"
     }
 }

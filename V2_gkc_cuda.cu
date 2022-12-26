@@ -671,7 +671,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 K_kmer, P_minimizer, SKM_partitions
             );
             // -- Malloc on host for SKM storage --
-            if (!GPU_compression) host_data[i].skm_store_csr = new byte[host_data[i].tot_skm_bytes];
+            if (!GPU_compression) host_data[i].skm_store_csr = new byte[host_data[i].tot_skm_bytes];//
             else {
                 host_data[i].skm_data = new byte*[SKM_partitions];//
                 host_data[i].skmpart_compressed_bytes = new size_t[SKM_partitions];//
@@ -726,9 +726,9 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             // process_func(host_data[i]);
             if (!GPU_compression)
-                SKMStoreNoncon::save_batch_skms (skm_partition_stores, host_data[i].skm_cnt, host_data[i].kmer_cnt, host_data[i].skmpart_offs, host_data[i].skm_store_csr, nullptr, true);
+                SKMStoreNoncon::save_batch_skms (skm_partition_stores, host_data[i].skm_cnt, host_data[i].kmer_cnt, host_data[i].skmpart_offs, host_data[i].skm_store_csr, nullptr);
             else
-                SKMStoreNoncon::save_batch_skms (skm_partition_stores, host_data[i].skm_cnt, host_data[i].kmer_cnt, host_data[i].skm_data, (size_t*)(host_data[i].skm_part_bytes), host_data[i].skmpart_compressed_bytes, true);
+                SKMStoreNoncon::save_batch_skms (skm_partition_stores, host_data[i].skm_cnt, host_data[i].kmer_cnt, host_data[i].skm_data, (size_t*)(host_data[i].skm_part_bytes), host_data[i].skmpart_compressed_bytes);
             
             // -- clean host variables --
             if (HPC) {
@@ -740,7 +740,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             delete [] host_data[i].skm_cnt;
             delete [] host_data[i].kmer_cnt;
             delete [] host_data[i].skmpart_offs;
-            // delete [] host_data[i].skm_store_csr; // don't delete because it will be used
+            // if (write to file) delete [] host_data[i].skm_store_csr;// deleted in SKMStore
             if (GPU_compression) {
                 delete host_data[i].skm_data;//
                 delete [] host_data[i].skmpart_compressed_bytes;//

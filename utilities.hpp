@@ -114,7 +114,6 @@ public:
     string tmp_file_folder = "./tmp/";
     string log_file_folder = "./log/";
     vector<string> read_files;
-    vector<string> local_read_files;
     
     T_read_cnt Batch_read_loading = 2000;
     size_t Buffer_fread_size_MB = 20;

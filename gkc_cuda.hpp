@@ -37,7 +37,7 @@ public:
     T_CSR_cap* reads_offs;
     T_read_cnt n_reads;
     T_CSR_cap size_capacity; // bytes = char unit
-    PinnedCSR(vector<string> &reads);
+    // PinnedCSR(vector<string> &reads);
     PinnedCSR(vector<ReadPtr> &reads, bool keep_original=true);
     ~PinnedCSR();
     char* get_reads_CSR() {return reads_CSR;}

@@ -5,7 +5,7 @@
 #include <chrono>
 #include <algorithm>
 #include <bits/stdc++.h>
-#include "csr.hpp"
+// #include "csr.hpp"
 #include "read_loader.hpp"
 // #include "superkmers.hpp"
 #include "gkc_cuda.hpp"
@@ -59,7 +59,7 @@ void GPUKmerCounting_TP(CUDAParams gpars) {
 
     vector<SKMStoreNoncon*> skm_part_vec;
     int i, tid;
-    for (i=0; i<PAR.SKM_partitions; i++) skm_part_vec.push_back(new SKMStoreNoncon(i));//
+    for (i=0; i<PAR.SKM_partitions; i++) skm_part_vec.push_back(new SKMStoreNoncon(i, PAR.to_file));// deleted in kmc_counting_GPU
     
     // ==== 1st phase: loading and generate superkmers ====
     logger->log("**** Phase 1: Loading and generate superkmers ****", Logger::LV_NOTICE);
@@ -86,8 +86,9 @@ void GPUKmerCounting_TP(CUDAParams gpars) {
     logger->log("SKM TOT CNT = " + to_string(skm_tot_cnt) + " BYTES = " + to_string(skm_tot_bytes));
     logger->log("KMER TOT CNT = " + to_string(kmer_tot_cnt));
 
-    // cout<<"Continue? ..."; char tmp; cin>>tmp;
+    cout<<"Continue? ..."; char tmp; cin>>tmp;
     // GPUReset(gpars.device_id);
+    exit(0);
     
     // ==== 2nd phase: superkmer extraction and kmer counting ====
     logger->log("**** Phase 2: Superkmer extraction and kmer counting ****", Logger::LV_NOTICE);

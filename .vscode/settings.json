@@ -23,6 +23,8 @@
         "regex": "cpp",
         "valarray": "cpp",
         "cstdio": "cpp",
-        "fstream": "cpp"
+        "fstream": "cpp",
+        "future": "cpp",
+        "condition_variable": "cpp"
     }
 }

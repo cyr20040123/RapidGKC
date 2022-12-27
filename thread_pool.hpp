@@ -21,9 +21,8 @@ private:
     mutex _wake_mtx;
     condition_variable _wake_cv;
 
-    // condition_variable _waiter_cv;
-    // mutex _waiter_mtx;
-    // atomic_flag _in_waiting;
+    condition_variable _holder_cv;
+    mutex _holder_mtx;
     
     mutex _queue_mtx; // for locking two queues below
     
@@ -33,6 +32,10 @@ private:
     
     vector<thread> _threads;
     atomic<bool> _exit_flag{false};          // must be atomic (SWMR)
+    
+    inline bool _not_busy () {
+        return _tasks.size() <= 2*_n_threads;
+    }
     
     template<typename NONVOID>
     inline void _set_promise(std::promise<NONVOID> & prom, function<T_OUT()> & func) {
@@ -61,6 +64,7 @@ private:
             promise<T_OUT> *prom = _task_promises.front();
             _task_promises.pop();
             _task_queue_empty = _tasks.empty();
+            if (_not_busy()) _holder_cv.notify_all();
             _queue_mtx.unlock();//
             // -- (mutex zone ends) --
 
@@ -96,28 +100,30 @@ public:
         _task_promises.push(new promise<T_OUT>());
         if (_task_queue_empty) _task_queue_empty = false;
         _wake_cv.notify_one();
+        _holder_cv.notify_all();
         return _task_promises.back()->get_future();
     }
-    void commit_task_no_return(function<T_OUT(/*T_IN*/)> task_func) {
+    void commit_task_no_return(function<T_OUT(/*T_IN*/)> task_func) { // not used
         _check_finished();
         unique_lock<mutex> tmp_lck(_queue_mtx);
         _tasks.push(task_func);
         _task_promises.push(nullptr);
         if (_task_queue_empty) _task_queue_empty = false;
         _wake_cv.notify_one();
+        _holder_cv.notify_all();
         return;
     }
     void finish() {
         _check_finished();
         _exit_flag = true;
         _wake_cv.notify_all();
+        _holder_cv.notify_all();
         for (auto &t: _threads) t.join();
     }
-    // void wait () {
-    //     _in_waiting.test_and_set();
-    //     unique_lock<mutex> tmp_lck(_waiter_mtx);
-    //     _waiter_cv.wait(tmp_lck, [&](){return _task_queue_empty==true});
-    // }
+    void hold_when_busy () {
+        unique_lock<mutex> tmp_lck(_holder_mtx);
+        _holder_cv.wait(tmp_lck, [=](){return this->_not_busy();});
+    }
 };
 
 /* an example: g++ -std=c++11 thread_pool.cpp -o test -lpthread -g

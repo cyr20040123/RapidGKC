@@ -69,6 +69,7 @@ void GlobalParams::ArgParser(int argc, char* argvs[]) {
         else if (!strcmp(argvs[i], "-cpuonly")) CPU_only = bool(atoi(argvs[++i]));
         else if (!strcmp(argvs[i], "-kf")) Kmer_filter = atof(argvs[++i])*100;
         else if (!strcmp(argvs[i], "-tmp")) tmp_file_folder = string(argvs[++i]);
+        else if (!strcmp(argvs[i], "-im")) to_file = false;
         else if (!strcmp(argvs[i], "-log")) log_file_folder = string(argvs[++i]);
         else if (!strcmp(argvs[i], "-fb")) Buffer_fread_size_MB = atoi(argvs[++i]);
         else if (!strcmp(argvs[i], "-rb")) Batch_read_loading = atoi(argvs[++i]);

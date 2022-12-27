@@ -175,11 +175,16 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kme
     CUDA_CHECK(cudaMemsetAsync(d_kmer_store_pos, 0, sizeof(unsigned long long), stream));
     
     // ---- copy skm chunks H2D ----
-    int i;
-    byte *d_store_pos = d_skms;
-    for (i=0; i<skms_store.skm_chunk_bytes.size(); i++) {
-        CUDA_CHECK(cudaMemcpyAsync(d_store_pos, skms_store.skm_chunks[i], skms_store.skm_chunk_bytes[i], cudaMemcpyHostToDevice, stream));
-        d_store_pos += skms_store.skm_chunk_bytes[i];
+    if (skms_store.to_file) {
+        // todo: cuFile...
+    }
+    else {
+        int i;
+        byte *d_store_pos = d_skms;
+        for (i=0; i<skms_store.skm_chunk_bytes.size(); i++) {
+            CUDA_CHECK(cudaMemcpyAsync(d_store_pos, skms_store.skm_chunks[i], skms_store.skm_chunk_bytes[i], cudaMemcpyHostToDevice, stream));
+            d_store_pos += skms_store.skm_chunk_bytes[i];
+        }
     }
     // ---- GPU work ----
     GPU_Extract_Kmers<<<BpG, TpB, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);

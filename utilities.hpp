@@ -111,7 +111,9 @@ public:
     bool CPU_only = false;
     int Kmer_filter = 25;       // percentage
     int N_threads = 4;          // threads per process
-    string tmp_file_folder = "./tmp/";
+    // string tmp_file_folder = "./tmp/";
+    string tmp_file_folder = "/home/cyr/tmp/";
+    bool to_file = true;
     string log_file_folder = "./log/";
     vector<string> read_files;
     

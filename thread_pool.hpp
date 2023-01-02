@@ -32,9 +32,11 @@ private:
     
     vector<thread> _threads;
     atomic<bool> _exit_flag{false};          // must be atomic (SWMR)
+
+    int _busy_thr = 2;
     
     inline bool _not_busy () {
-        return _tasks.size() <= 2*_n_threads;
+        return _tasks.size() <= _busy_thr;
     }
     
     template<typename NONVOID>
@@ -81,7 +83,9 @@ private:
         }
     }
 public:
-    ThreadPool(int n_threads) {
+    ThreadPool(int n_threads, int busy_thr = -1) {
+        if (busy_thr <= 0) _busy_thr = 2*n_threads;
+        else _busy_thr = busy_thr;
         _n_threads = n_threads;
         int tid;
         for (tid=0; tid<_n_threads; tid++) {

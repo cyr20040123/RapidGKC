@@ -2,6 +2,7 @@
 #define _UTILITIES_HPP
 
 #include "types.h"
+#include <atomic>
 #include <chrono>
 #include <string>
 #include <vector>
@@ -122,11 +123,21 @@ public:
 
     int grid_size = 8;
     int block_size = 256;
+    int n_devices = 1;
+    int n_streams = 6;
 
     bool GPU_compression = false;
 
     void ArgParser(int argc, char* argvs[]);
 } PAR;
+
+struct CUDAParams {
+    int NUM_BLOCKS_PER_GRID, NUM_THREADS_PER_BLOCK;
+    int n_streams;//, items_per_stream;
+    int n_streams_phase2;
+    int n_devices;
+    atomic<int> device_id;
+};
 
 // ================ Read Sorting ================
 static bool sort_comp (const ReadPtr x, const ReadPtr y) {

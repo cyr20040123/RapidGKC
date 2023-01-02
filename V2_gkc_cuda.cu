@@ -454,6 +454,7 @@ __host__ void GPUReset(int did) {
     // do not call it after host malloc
     CUDA_CHECK(cudaSetDevice(did));
     CUDA_CHECK(cudaDeviceReset());
+    // CUDA_CHECK(cudaInitDevice(did, ));
     CUDA_CHECK(cudaDeviceSynchronize());
     return;
 }
@@ -517,15 +518,16 @@ __host__ void SKM_Compression_COLLECT (GdeflateManager *nvcomp_managers, std::ve
 
 // provide pinned_reads from the shortest to the longest read
 __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
-    const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams gpars, CountTask task,
+    const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars, CountTask task,
     const int SKM_partitions, vector<SKMStoreNoncon*> skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
     bool GPU_compression
     /*atomic<size_t> skm_part_sizes[]*/) {
     
     int time_all=0, time_filter=0;
 
-    CUDA_CHECK(cudaSetDevice(gpars.device_id));
-    CUDA_CHECK(cudaDeviceSynchronize());
+    int gpuid = (gpars.device_id++) % gpars.n_devices;
+    CUDA_CHECK(cudaSetDevice(gpuid));
+    // CUDA_CHECK(cudaDeviceSynchronize());
     
     cudaStream_t streams[gpars.n_streams];
     T_d_data gpu_data[gpars.n_streams];
@@ -549,7 +551,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             end_read = min(cur_read + items_per_stream, pinned_reads.n_reads); // the last read in this stream batch
             host_data[i].reads_cnt = gpu_data[i].reads_cnt = end_read-cur_read;
             batch_size[i] = pinned_reads.reads_offs[end_read] - pinned_reads.reads_offs[cur_read]; // read size in bytes
-            logger->log("GPU stream "+to_string(i)+":\tread count = "+to_string(gpu_data[i].reads_cnt));
+            logger->log("GPU "+to_string(gpuid)+" Stream "+to_string(i)+":\tread count = "+to_string(gpu_data[i].reads_cnt));
 
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             // ---- cudaMalloc ----
@@ -608,8 +610,8 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             time_filter += wct2.stop(true);
             #endif
             
-            // GPU_GenSKMOffs<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>>(
-            GPU_GenSKMOffs<<<8, 256, 0, streams[i]>>>(
+            GPU_GenSKMOffs<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>>(
+            // GPU_GenSKMOffs<<<8, 256, 0, streams[i]>>>(
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_len, gpu_data[i].d_read_offs, 
                 gpu_data[i].d_minimizers,
                 gpu_data[i].d_superkmer_offs,
@@ -748,5 +750,6 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             }
         }
     }
-    logger->log("FILTER: " STR(FILTER_KERNEL) " Kernel Functions Time: ALL = "+to_string(time_all)+"ms FILTER = "+to_string(time_filter)+"ms");
+    if (time_all!=0)
+        logger->log("FILTER: " STR(FILTER_KERNEL) " Kernel Functions Time: ALL = "+to_string(time_all)+"ms FILTER = "+to_string(time_filter)+"ms");
 }

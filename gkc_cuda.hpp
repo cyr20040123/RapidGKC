@@ -23,12 +23,6 @@ while((call) != cudaSuccess) { \
 #include <functional>
 using namespace std;
 
-struct CUDAParams {
-    int NUM_BLOCKS_PER_GRID, NUM_THREADS_PER_BLOCK;
-    int n_streams;//, items_per_stream;
-    int device_id;
-};
-
 // hint: better to sort the reads by their lengths so that cuda will work faster
 
 class PinnedCSR { // for one-time use only
@@ -57,7 +51,7 @@ enum CountTask {SKMPartition, SKMPartWithPos, StoreMinimizerPos}; // 正常kmc, 
 void GPUReset (int did);
 
 void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
-    const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams gpars, CountTask task,
+    const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars, CountTask task,
     const int SKM_partitions, vector<SKMStoreNoncon*> skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
     bool GPU_compression
     /*atomic<size_t> skm_part_sizes[]*/);

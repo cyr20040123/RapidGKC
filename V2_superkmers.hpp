@@ -43,7 +43,7 @@ public:
         assert(file_closed == false);
         #endif
         // this->data_mtx.lock();
-        fwrite(data, 1, size, fp);
+        assert(fwrite(data, 1, size, fp) == size);
         // this->data_mtx.unlock();
     }
     void close_file() {

@@ -25,6 +25,20 @@
         "cstdio": "cpp",
         "fstream": "cpp",
         "future": "cpp",
-        "condition_variable": "cpp"
+        "condition_variable": "cpp",
+        "locale": "cpp",
+        "__bit_reference": "cpp",
+        "__hash_table": "cpp",
+        "__split_buffer": "cpp",
+        "__tree": "cpp",
+        "filesystem": "cpp",
+        "iterator": "cpp",
+        "map": "cpp",
+        "set": "cpp",
+        "new": "cpp",
+        "stdexcept": "cpp",
+        "any": "cpp",
+        "system_error": "cpp",
+        "bitset": "cpp"
     }
 }

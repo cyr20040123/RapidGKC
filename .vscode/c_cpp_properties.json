@@ -4,7 +4,8 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-                "/usr/local/nvcomp/include"
+                "/usr/local/nvcomp/include",
+                "/usr/local/cuda/include"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",

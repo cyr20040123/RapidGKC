@@ -24,7 +24,7 @@ if (cuerr.cu_err != CUDA_SUCCESS) { \
 
 #include <fcntl.h> // open
 #include <unistd.h> // close
-#include "cufile.h"
+// #include "cufile.h"
 
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
@@ -178,38 +178,39 @@ __global__ void GPU_Extract_Kmers_test (byte* d_skms, size_t tot_bytes, T_kmer *
 }
 #endif
 
-__host__ byte* load_SKM_from_file_GDS (SKMStoreNoncon &skms_store) {
-    byte* d_skms;
-    CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes));
+// TODO: use cufile to load file?
+// __host__ byte* load_SKM_from_file_GDS (SKMStoreNoncon &skms_store) {
+//     byte* d_skms;
+//     CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes));
     
-    int fd;
-    CUfileError_t cf_status;
-    CUfileDescr_t cf_descr;
-    CUfileHandle_t cf_handl;
-    ssize_t bytes_read;
+//     int fd;
+//     CUfileError_t cf_status;
+//     CUfileDescr_t cf_descr;
+//     CUfileHandle_t cf_handl;
+//     ssize_t bytes_read;
 
-    // cf_status = cuFileDriverOpen();
-    // CUFILE_STATUS_CHECK(cf_status, __LINE__);
-    fd = open(skms_store.filename.c_str(), O_RDONLY|O_DIRECT);
-    cerr<<fd<<endl;
-    cf_descr.handle.fd = fd;
-    cf_descr.type = CU_FILE_HANDLE_TYPE_OPAQUE_FD;
-    cf_status = cuFileHandleRegister(&cf_handl, &cf_descr); // 5030
-    CUFILE_STATUS_CHECK(cf_status, __LINE__);
-    cf_status = cuFileBufRegister(d_skms, skms_store.tot_size_bytes, 0);
-    CUFILE_STATUS_CHECK(cf_status, __LINE__);
-    WallClockTimer wct_file;
-    bytes_read = cuFileRead(cf_handl, (void*) d_skms, skms_store.tot_size_bytes, 0, 0); // TODO: where is cuFileReadAsync???
-    int speed = skms_store.tot_size_bytes*1000/1048576/wct_file.stop(true);
-    logger->log(skms_store.filename+" File loading speed (MB/s): "+to_string(speed)+" "+to_string(bytes_read)+" "+to_string(skms_store.tot_size_bytes));
-    assert(bytes_read == skms_store.tot_size_bytes);
-    // cf_status = cuFileReadAsync(cf_handl, (void*) d_skms, &(skms_store.tot_size_bytes), 0, 0, &bytes_read, stream); // must enable NVreg_EnableStreamMemOPs=1
-    cf_status = cuFileBufDeregister(d_skms);
-    CUFILE_STATUS_CHECK(cf_status, __LINE__);
-    cuFileHandleDeregister(cf_handl);
-    close(fd);
-    return d_skms;
-}
+//     // cf_status = cuFileDriverOpen();
+//     // CUFILE_STATUS_CHECK(cf_status, __LINE__);
+//     fd = open(skms_store.filename.c_str(), O_RDONLY|O_DIRECT);
+//     cerr<<fd<<endl;
+//     cf_descr.handle.fd = fd;
+//     cf_descr.type = CU_FILE_HANDLE_TYPE_OPAQUE_FD;
+//     cf_status = cuFileHandleRegister(&cf_handl, &cf_descr); // 5030
+//     CUFILE_STATUS_CHECK(cf_status, __LINE__);
+//     cf_status = cuFileBufRegister(d_skms, skms_store.tot_size_bytes, 0);
+//     CUFILE_STATUS_CHECK(cf_status, __LINE__);
+//     WallClockTimer wct_file;
+//     bytes_read = cuFileRead(cf_handl, (void*) d_skms, skms_store.tot_size_bytes, 0, 0); // TODO: where is cuFileReadAsync???
+//     int speed = skms_store.tot_size_bytes*1000/1048576/wct_file.stop(true);
+//     logger->log(skms_store.filename+" File loading speed (MB/s): "+to_string(speed)+" "+to_string(bytes_read)+" "+to_string(skms_store.tot_size_bytes));
+//     assert(bytes_read == skms_store.tot_size_bytes);
+//     // cf_status = cuFileReadAsync(cf_handl, (void*) d_skms, &(skms_store.tot_size_bytes), 0, 0, &bytes_read, stream); // must enable NVreg_EnableStreamMemOPs=1
+//     cf_status = cuFileBufDeregister(d_skms);
+//     CUFILE_STATUS_CHECK(cf_status, __LINE__);
+//     cuFileHandleDeregister(cf_handl);
+//     close(fd);
+//     return d_skms;
+// }
 __host__ byte* load_SKM_from_file (SKMStoreNoncon &skms_store) {
     byte* d_skms;
     CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes));

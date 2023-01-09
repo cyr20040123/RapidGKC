@@ -336,7 +336,7 @@ __global__ void GPU_GenSKMOffs(
         skm[len-1] = skm_count;
     }
 
-    // add thread-local counter to the global memory
+    // add thread-local counter to the global memory // TODO: move this for-loop into the above loop and flush every loop, so that unsigned char should be enough
     for (int i=0; i<SKM_partitions; i++) {
         atomicAdd(&d_skm_cnt[i], p_skm_cnt[i]);
         atomicAdd(&d_kmer_cnt[i], p_kmer_cnt[i]);
@@ -451,6 +451,7 @@ __global__ void MoveOffset(_in_ T_read_cnt d_reads_cnt, _in_ _out_ T_CSR_cap *d_
 }
 
 __host__ void GPUReset(int did) {
+    cerr<<"now reset GPU "<<did<<endl;
     // do not call it after host malloc
     CUDA_CHECK(cudaSetDevice(did));
     CUDA_CHECK(cudaDeviceReset());
@@ -619,7 +620,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 gpu_data[i].d_skm_cnt,
                 gpu_data[i].d_kmer_cnt,
                 K_kmer, P_minimizer, SKM_partitions
-            );
+            ); // ERROR may caused by allocating too many thread memory
             #ifdef KERNEL_TIME_MEASUREMENT
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             time_all += wct.stop(true);

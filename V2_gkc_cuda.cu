@@ -298,10 +298,19 @@ __global__ void GPU_GenSKMOffs(
     T_read_len i;
 
     // reset thread-local skm counter and kmer counter
-    unsigned short *p_skm_cnt = new unsigned short[SKM_partitions];//   // thread-local: skm cnt of each partition
-    unsigned short *p_kmer_cnt = new unsigned short[SKM_partitions];//  // thread-local: kmer cnt of each partition // TODO: unsigned short may not be large enough, but unsigned int may overflow when SKM_part > 255
-    for (i=0; i<SKM_partitions; i++) p_skm_cnt[i] = 0, p_kmer_cnt[i] = 0;
-
+    // --- V1 ---
+    // unsigned short *p_skm_cnt = new unsigned short[SKM_partitions];//   // thread-local: skm cnt of each partition
+    // unsigned short *p_kmer_cnt = new unsigned short[SKM_partitions];//  // thread-local: kmer cnt of each partition // TODO: unsigned short may not be large enough, but unsigned int may overflow when SKM_part > 255
+    // for (i=0; i<SKM_partitions; i++) p_skm_cnt[i] = 0, p_kmer_cnt[i] = 0;
+    // --- V1 end ---
+    extern __shared__ unsigned int shared_arr[];
+    // extern __shared__ unsigned int p_kmer_cnt[];
+    unsigned int *p_skm_cnt = &shared_arr[0];
+    unsigned int *p_kmer_cnt = &shared_arr[SKM_partitions];
+    for (i=threadIdx.x; i<SKM_partitions; i+=blockDim.x) p_skm_cnt[i] = 0, p_kmer_cnt[i] = 0;
+    __syncthreads();
+    // --- V2 end ---
+    
     // each thread processes one read at a time
     for (T_read_cnt rid = tid; rid < d_reads_cnt; rid += n_t) {
         T_read_len len = d_read_len[rid];                               // current read length
@@ -319,8 +328,14 @@ __global__ void GPU_GenSKMOffs(
                 p_i = minimizers[i-1] % SKM_partitions;
                 atomicAdd(&d_skm_part_bytes[p_i], _skm_bytes_required(skm[skm_count-1], skm[skm_count], K_kmer));
                 // atomicAdd(&d_skm_cnt[p_i], 1);
-                p_skm_cnt[p_i] ++;
-                p_kmer_cnt[p_i] += skm[skm_count] - skm[skm_count-1];
+                
+                // --- V1 ---
+                // p_skm_cnt[p_i] ++;
+                // p_kmer_cnt[p_i] += skm[skm_count] - skm[skm_count-1];
+                // --- V1 end ---
+                atomicAdd(&p_skm_cnt[p_i], 1);
+                atomicAdd(&p_kmer_cnt[p_i], skm[skm_count] - skm[skm_count-1]);
+                // --- V2 end ---
             }
         }
         // process the last skm
@@ -328,8 +343,13 @@ __global__ void GPU_GenSKMOffs(
         skm[skm_count] = len-K_kmer+1;
         p_i = minimizers[i-1] % SKM_partitions;
         atomicAdd(&d_skm_part_bytes[p_i], _skm_bytes_required(skm[skm_count-1], skm[skm_count], K_kmer));
-        p_skm_cnt[p_i] ++;
-        p_kmer_cnt[p_i] += skm[skm_count] - skm[skm_count-1];
+        // --- V1 ---
+        // p_skm_cnt[p_i] ++;
+        // p_kmer_cnt[p_i] += skm[skm_count] - skm[skm_count-1];
+        // --- V1 end ---
+        atomicAdd(&p_skm_cnt[p_i], 1);
+        atomicAdd(&p_kmer_cnt[p_i], skm[skm_count] - skm[skm_count-1]);
+        // --- V2 end ---
 
         // set the ending 0 and store skm_count at skm[len-1]
         skm[skm_count+1] = 0;
@@ -337,13 +357,20 @@ __global__ void GPU_GenSKMOffs(
     }
 
     // add thread-local counter to the global memory // TODO: move this for-loop into the above loop and flush every loop, so that unsigned char should be enough
-    for (int i=0; i<SKM_partitions; i++) {
+    // --- V1 ---
+    // for (int i=0; i<SKM_partitions; i++) {
+    //     atomicAdd(&d_skm_cnt[i], p_skm_cnt[i]);
+    //     atomicAdd(&d_kmer_cnt[i], p_kmer_cnt[i]);
+    // }
+    // delete p_skm_cnt;//
+    // delete p_kmer_cnt;//
+    // --- V1 end ---
+    __syncthreads();
+    for (i=threadIdx.x; i<SKM_partitions; i+=blockDim.x) {
         atomicAdd(&d_skm_cnt[i], p_skm_cnt[i]);
         atomicAdd(&d_kmer_cnt[i], p_kmer_cnt[i]);
     }
-
-    delete p_skm_cnt;//
-    delete p_kmer_cnt;//
+    // --- V2 end ---
     return;
 }
 
@@ -580,8 +607,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             // ---- copy raw reads to device ----
             CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_reads, &(pinned_reads.reads_CSR[pinned_reads.reads_offs[cur_read]]), batch_size[i], cudaMemcpyHostToDevice, streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_read_offs, &(pinned_reads.reads_offs[cur_read]), sizeof(T_CSR_cap) * (gpu_data[i].reads_cnt+1), cudaMemcpyHostToDevice, streams[i]));
-            CUDA_CHECK(cudaStreamSynchronize(streams[i+2-2]));
-
+            
             // ---- GPU gen skm ----
             #ifdef KERNEL_TIME_MEASUREMENT
             WallClockTimer wct;
@@ -589,7 +615,6 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             MoveOffset<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>>(
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_offs, 0
             );
-            CUDA_CHECK(cudaStreamSynchronize(streams[i+3-3]));
             #ifdef KERNEL_TIME_MEASUREMENT
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             #endif
@@ -599,7 +624,6 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 gpu_data[i].d_reads,    gpu_data[i].d_read_offs, 
                 HPC,                    gpu_data[i].d_hpc_orig_pos
             );
-            CUDA_CHECK(cudaStreamSynchronize(streams[i+4-4]));
             #ifdef KERNEL_TIME_MEASUREMENT
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             
@@ -611,13 +635,12 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 gpu_data[i].d_minimizers, 
                 K_kmer, P_minimizer
             );
-            CUDA_CHECK(cudaStreamSynchronize(streams[i+5-5]));
             #ifdef KERNEL_TIME_MEASUREMENT
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             time_filter += wct2.stop(true);
             #endif
             
-            GPU_GenSKMOffs<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>>(
+            GPU_GenSKMOffs<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 2*SKM_partitions*sizeof(unsigned int), streams[i]>>>(
             // GPU_GenSKMOffs<<<8, 256, 0, streams[i]>>>(
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_len, gpu_data[i].d_read_offs, 
                 gpu_data[i].d_minimizers,
@@ -627,7 +650,6 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 gpu_data[i].d_kmer_cnt,
                 K_kmer, P_minimizer, SKM_partitions
             ); // ERROR may caused by allocating too many thread memory
-            CUDA_CHECK(cudaStreamSynchronize(streams[i+6-6]));
             #ifdef KERNEL_TIME_MEASUREMENT
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             time_all += wct.stop(true);
@@ -642,7 +664,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             host_data[i].skm_part_bytes = new T_skm_partsize[SKM_partitions];//1
             host_data[i].skm_cnt = new T_skm_partsize[SKM_partitions];//2
             host_data[i].kmer_cnt = new T_skm_partsize[SKM_partitions];//3
-            CUDA_CHECK(cudaStreamSynchronize(streams[i+7-7]));
+            // CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].skm_part_bytes,  gpu_data[i].d_skm_part_bytes,    sizeof(T_skm_partsize) * SKM_partitions, cudaMemcpyDeviceToHost, streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].skm_cnt,         gpu_data[i].d_skm_cnt,           sizeof(T_skm_partsize) * SKM_partitions, cudaMemcpyDeviceToHost, streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].kmer_cnt,        gpu_data[i].d_kmer_cnt,          sizeof(T_skm_partsize) * SKM_partitions, cudaMemcpyDeviceToHost, streams[i]));

@@ -39,6 +39,9 @@
         "stdexcept": "cpp",
         "any": "cpp",
         "system_error": "cpp",
-        "bitset": "cpp"
+        "bitset": "cpp",
+        "thread": "cpp",
+        "__locale": "cpp",
+        "ios": "cpp"
     }
 }

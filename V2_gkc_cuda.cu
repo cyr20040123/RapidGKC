@@ -580,7 +580,8 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             // ---- copy raw reads to device ----
             CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_reads, &(pinned_reads.reads_CSR[pinned_reads.reads_offs[cur_read]]), batch_size[i], cudaMemcpyHostToDevice, streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_read_offs, &(pinned_reads.reads_offs[cur_read]), sizeof(T_CSR_cap) * (gpu_data[i].reads_cnt+1), cudaMemcpyHostToDevice, streams[i]));
-            
+            CUDA_CHECK(cudaStreamSynchronize(streams[i+2-2]));
+
             // ---- GPU gen skm ----
             #ifdef KERNEL_TIME_MEASUREMENT
             WallClockTimer wct;
@@ -588,6 +589,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             MoveOffset<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>>(
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_offs, 0
             );
+            CUDA_CHECK(cudaStreamSynchronize(streams[i+3-3]));
             #ifdef KERNEL_TIME_MEASUREMENT
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             #endif
@@ -597,6 +599,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 gpu_data[i].d_reads,    gpu_data[i].d_read_offs, 
                 HPC,                    gpu_data[i].d_hpc_orig_pos
             );
+            CUDA_CHECK(cudaStreamSynchronize(streams[i+4-4]));
             #ifdef KERNEL_TIME_MEASUREMENT
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             
@@ -608,6 +611,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 gpu_data[i].d_minimizers, 
                 K_kmer, P_minimizer
             );
+            CUDA_CHECK(cudaStreamSynchronize(streams[i+5-5]));
             #ifdef KERNEL_TIME_MEASUREMENT
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             time_filter += wct2.stop(true);
@@ -623,6 +627,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 gpu_data[i].d_kmer_cnt,
                 K_kmer, P_minimizer, SKM_partitions
             ); // ERROR may caused by allocating too many thread memory
+            CUDA_CHECK(cudaStreamSynchronize(streams[i+6-6]));
             #ifdef KERNEL_TIME_MEASUREMENT
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             time_all += wct.stop(true);
@@ -637,7 +642,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             host_data[i].skm_part_bytes = new T_skm_partsize[SKM_partitions];//1
             host_data[i].skm_cnt = new T_skm_partsize[SKM_partitions];//2
             host_data[i].kmer_cnt = new T_skm_partsize[SKM_partitions];//3
-            CUDA_CHECK(cudaStreamSynchronize(streams[i]));
+            CUDA_CHECK(cudaStreamSynchronize(streams[i+7-7]));
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].skm_part_bytes,  gpu_data[i].d_skm_part_bytes,    sizeof(T_skm_partsize) * SKM_partitions, cudaMemcpyDeviceToHost, streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].skm_cnt,         gpu_data[i].d_skm_cnt,           sizeof(T_skm_partsize) * SKM_partitions, cudaMemcpyDeviceToHost, streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].kmer_cnt,        gpu_data[i].d_kmer_cnt,          sizeof(T_skm_partsize) * SKM_partitions, cudaMemcpyDeviceToHost, streams[i]));

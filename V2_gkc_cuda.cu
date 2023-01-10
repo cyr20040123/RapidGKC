@@ -637,7 +637,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             host_data[i].skm_part_bytes = new T_skm_partsize[SKM_partitions];//1
             host_data[i].skm_cnt = new T_skm_partsize[SKM_partitions];//2
             host_data[i].kmer_cnt = new T_skm_partsize[SKM_partitions];//3
-            // CUDA_CHECK(cudaStreamSynchronize(streams[i]));
+            CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].skm_part_bytes,  gpu_data[i].d_skm_part_bytes,    sizeof(T_skm_partsize) * SKM_partitions, cudaMemcpyDeviceToHost, streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].skm_cnt,         gpu_data[i].d_skm_cnt,           sizeof(T_skm_partsize) * SKM_partitions, cudaMemcpyDeviceToHost, streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].kmer_cnt,        gpu_data[i].d_kmer_cnt,          sizeof(T_skm_partsize) * SKM_partitions, cudaMemcpyDeviceToHost, streams[i]));

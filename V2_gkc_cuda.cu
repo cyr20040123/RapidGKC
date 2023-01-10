@@ -543,6 +543,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
     T_read_cnt items_per_stream = gpars.NUM_BLOCKS_PER_GRID * gpars.NUM_THREADS_PER_BLOCK;
     T_read_cnt cur_read = 0, end_read;
     i = 0; // i for which stream
+    string logs = "GPU "+to_string(gpuid)+":";
     while (cur_read < pinned_reads.n_reads) {
 
         for (i = 0; i < gpars.n_streams && cur_read < pinned_reads.n_reads; i++, cur_read += items_per_stream) {
@@ -552,7 +553,8 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             end_read = min(cur_read + items_per_stream, pinned_reads.n_reads); // the last read in this stream batch
             host_data[i].reads_cnt = gpu_data[i].reads_cnt = end_read-cur_read;
             batch_size[i] = pinned_reads.reads_offs[end_read] - pinned_reads.reads_offs[cur_read]; // read size in bytes
-            logger->log("GPU "+to_string(gpuid)+" Stream "+to_string(i)+":\tread count = "+to_string(gpu_data[i].reads_cnt));
+            // logger->log("GPU "+to_string(gpuid)+" Stream "+to_string(i)+":\tread count = "+to_string(gpu_data[i].reads_cnt));
+            logs += "\tS "+to_string(i)+"  #Reads "+to_string(gpu_data[i].reads_cnt);
 
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             // ---- cudaMalloc ----
@@ -751,6 +753,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             }
         }
     }
+    logger->log(logs);
     if (time_all!=0)
         logger->log("FILTER: " STR(FILTER_KERNEL) " Kernel Functions Time: ALL = "+to_string(time_all)+"ms FILTER = "+to_string(time_filter)+"ms");
 }

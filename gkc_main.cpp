@@ -153,6 +153,7 @@ int main (int argc, char** argvs) {
     gpars.n_streams_phase2 = PAR.n_streams;
     gpars.NUM_BLOCKS_PER_GRID = PAR.grid_size;
     gpars.NUM_THREADS_PER_BLOCK = PAR.block_size;
+    gpars.items_stream_mul = PAR.reads_per_stream_mul;
 
     for (int i=0; i<gpars.n_devices; i++) GPUReset(i); // must before not after pinned memory allocation
 

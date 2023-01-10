@@ -26409,3 +26409,34 @@ read count = 779
 (01-11 02:40:33) P0 [DEBUG]	Total number of distinct kmers: 135435562
 (01-11 02:40:33) P0 [NOTICE]	**** Kmer counting finished (Phase 2 ends) ****
 (01-11 02:40:33) P0 [INFO]	     Phase 2 Time: 1.069000 sec
+================================
+(01-11 03:09:55) P0 [DEBUG]	./test -t 1 -k 28 -p 7 -skm 31 -fb 20 -rb 2048 -rps 2 -read /home/cyr/downloads/pacbio_filtered.fastq 
+(01-11 03:09:55) P0 [NOTICE]	**** Phase 1: Loading and generate superkmers ****
+(01-11 03:09:55) P0 [DEBUG]	---- BATCH	n_reads = 2459	min_len = 59	max_len = 25184	size = 20863319	----
+(01-11 03:09:56) P0 [DEBUG]	GPU 0:	S 0  #Reads 2459
+(01-11 03:09:56) P0 [DEBUG]	---- BATCH	n_reads = 2510	min_len = 53	max_len = 26227	size = 20866158	----
+(01-11 03:09:56) P0 [DEBUG]	GPU 0:	S 0  #Reads 2510
+(01-11 03:09:56) P0 [DEBUG]	---- BATCH	n_reads = 2577	min_len = 58	max_len = 26891	size = 20873746	----
+(01-11 03:09:56) P0 [DEBUG]	GPU 0:	S 0  #Reads 2577
+(01-11 03:09:56) P0 [DEBUG]	---- BATCH	n_reads = 2485	min_len = 52	max_len = 26872	size = 20867884	----
+(01-11 03:09:56) P0 [DEBUG]	GPU 0:	S 0  #Reads 2485
+(01-11 03:09:56) P0 [DEBUG]	---- BATCH	n_reads = 2538	min_len = 56	max_len = 28647	size = 20864534	----
+(01-11 03:09:56) P0 [DEBUG]	GPU 0:	S 0  #Reads 2538
+(01-11 03:09:56) P0 [DEBUG]	---- BATCH	n_reads = 4321	min_len = 59	max_len = 26806	size = 34869906	----
+(01-11 03:09:56) P0 [DEBUG]	GPU 0:	S 0  #Reads 4096	S 1  #Reads 225
+(01-11 03:09:56) P0 [NOTICE]	-- [/home/cyr/downloads/pacbio_filtered.fastq] processed --
+(01-11 03:09:56) P0 [NOTICE]	**** All reads loaded and SKMs generated (Phase 1 ends) ****
+(01-11 03:09:56) P0 [INFO]	     Phase 1 Time: 0.816000 sec
+(01-11 03:09:56) P0 [DEBUG]	SKM TOT CNT = 11329758 BYTES = 159541736
+(01-11 03:09:56) P0 [DEBUG]	KMER TOT CNT = 138749517
+(01-11 03:09:56) P0 [NOTICE]	**** Phase 2: Superkmer extraction and kmer counting ****
+(01-11 03:09:56) P0 [DEBUG]	(with 1 threads)
+(01-11 03:09:56) P0 [INFO]	GPU 0:	S 0 Part 0	S 1 Part 1	S 2 Part 2	S 3 Part 3	S 4 Part 4	S 5 Part 5
+(01-11 03:09:56) P0 [INFO]	GPU 0:	S 0 Part 6	S 1 Part 7	S 2 Part 8	S 3 Part 9	S 4 Part 10	S 5 Part 11
+(01-11 03:09:57) P0 [INFO]	GPU 0:	S 0 Part 12	S 1 Part 13	S 2 Part 14	S 3 Part 15	S 4 Part 16	S 5 Part 17
+(01-11 03:09:57) P0 [INFO]	GPU 0:	S 0 Part 18	S 1 Part 19	S 2 Part 20	S 3 Part 21	S 4 Part 22	S 5 Part 23
+(01-11 03:09:57) P0 [INFO]	GPU 0:	S 0 Part 24	S 1 Part 25	S 2 Part 26	S 3 Part 27	S 4 Part 28	S 5 Part 29
+(01-11 03:09:57) P0 [INFO]	GPU 0:	S 0 Part 30
+(01-11 03:09:57) P0 [DEBUG]	Total number of distinct kmers: 135435562
+(01-11 03:09:57) P0 [NOTICE]	**** Kmer counting finished (Phase 2 ends) ****
+(01-11 03:09:57) P0 [INFO]	     Phase 2 Time: 1.005000 sec

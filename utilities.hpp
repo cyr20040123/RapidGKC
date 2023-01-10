@@ -125,6 +125,7 @@ public:
     int block_size = 256;
     int n_devices = 1;
     int n_streams = 6;
+    int reads_per_stream_mul = 1;
 
     bool GPU_compression = false;
 
@@ -133,7 +134,7 @@ public:
 
 struct CUDAParams {
     int NUM_BLOCKS_PER_GRID, NUM_THREADS_PER_BLOCK;
-    int n_streams;//, items_per_stream;
+    int n_streams, items_stream_mul;
     int n_streams_phase2;
     int n_devices;
     atomic<int> device_id;

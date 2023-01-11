@@ -461,6 +461,7 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
         CUDA_CHECK(cudaStreamCreate(&streams[i]));
         // logger->log("GPU "+to_string(gpuid)+" Stream "+to_string(i)+" counting Partition "+to_string(skms_stores[i]->id), Logger::LV_INFO);
         logs += "\tS "+to_string(i)+" Part "+to_string(skms_stores[i]->id)+" "+to_string(skms_stores[i]->tot_size_bytes)+"|"+to_string(skms_stores[i]->kmer_cnt);
+        logger->log(logs, Logger::LV_INFO);
         if (skms_stores[i]->tot_size_bytes != 0) {
             // ---- 0. Extract kmers from SKMStore: ---- 
             kmers_d_vec[i] = thrust::device_vector<T_kmer>(skms_stores[i]->kmer_cnt);
@@ -531,6 +532,6 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
     for (i=0; i<n_streams; i++) {
         delete skms_stores[i];//
     }
-    logger->log(logs+" "+to_string(return_value), Logger::LV_INFO);
+    logger->log(logs, Logger::LV_INFO);
     return return_value; // total distinct kmer
 }

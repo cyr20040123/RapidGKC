@@ -511,6 +511,7 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
     
     // validation:
     for (i=0; i<n_streams; i++) {
+        if (skms_stores[i]->tot_size_bytes == 0) continue;
         size_t total_kmer_cnt = 0;
         T_kmer_cnt cnt;
         for(int j=0; j<idx_h_vec[i].size()-1; j++) {
@@ -524,10 +525,12 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
         }
         assert(total_kmer_cnt == skms_stores[i]->kmer_cnt);
     }
-    
+    for (i=0; i<n_streams; i++) {
+        if (skms_stores[i]->tot_size_bytes == 0) continue;
+        return_value += idx_h_vec[i].size()-1;
+    }
     for (i=0; i<n_streams; i++) {
         delete skms_stores[i];//
-        return_value += idx_h_vec[i].size()-1;
     }
     return return_value; // total distinct kmer
 }

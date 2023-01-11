@@ -42,6 +42,9 @@
         "bitset": "cpp",
         "thread": "cpp",
         "__locale": "cpp",
-        "ios": "cpp"
+        "ios": "cpp",
+        "utility": "cpp",
+        "queue": "cpp",
+        "stack": "cpp"
     }
 }

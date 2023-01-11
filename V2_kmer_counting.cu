@@ -133,21 +133,47 @@ __device__ size_t _find_full_nonfull_pos (size_t beg, size_t end, byte* d_skms) 
     }
     return (FN_pos_found>=2) * i + (FN_pos_found<2) * NULL_POS; // return the next position after a full and nonfull
 }
+// __global__ void GPU_Extract_Kmers (byte* d_skms, size_t tot_bytes, T_kmer *d_kmers, unsigned long long *d_kmer_store_pos, T_kvalue k) {
+//     int n_t = blockDim.x * gridDim.x;
+//     int tid = blockDim.x * blockIdx.x + threadIdx.x;
+//     size_t bytes_per_thread = (tot_bytes + n_t - 1) / n_t; // min: 1
+//     size_t i, search_ending; // which byte to process
+//     size_t beg_byte_pos, end_byte_pos;
+//     for (i = tid*bytes_per_thread; i/*+bytes_per_thread*/ < tot_bytes; i += n_t*bytes_per_thread) {
+//         // printf("i: %llu %llu\n",i,bytes_per_thread);
+//         // find begin byte:
+//         beg_byte_pos = i==0 ? 0 : _find_full_nonfull_pos(i, i+bytes_per_thread+1, d_skms); // if i==0 begin position is ULL_MAX+1=0, begins from 0
+//         // find end byte: (make sure the last full byte is in the area of at least the next thread)
+//         search_ending = i+2*bytes_per_thread < tot_bytes ? i+2*bytes_per_thread : tot_bytes;
+//         end_byte_pos = _find_full_nonfull_pos (i+bytes_per_thread, search_ending, d_skms);
+//         end_byte_pos = (end_byte_pos < tot_bytes) * end_byte_pos + (end_byte_pos >= tot_bytes) * tot_bytes;
+//         if (beg_byte_pos < tot_bytes) {
+//             // printf("%llu process %llu %llu (%d %llu)\n",tot_bytes, beg_byte_pos, end_byte_pos, tid, i);
+//             // printf("%llu %llu\n",beg_byte_pos,end_byte_pos);
+//             _process_bytes(beg_byte_pos, end_byte_pos, d_skms, d_kmers, d_kmer_store_pos, k);
+//         }
+//     }
+//     return;
+// }
+
 __global__ void GPU_Extract_Kmers (byte* d_skms, size_t tot_bytes, T_kmer *d_kmers, unsigned long long *d_kmer_store_pos, T_kvalue k) {
     int n_t = blockDim.x * gridDim.x;
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     size_t bytes_per_thread = (tot_bytes + n_t - 1) / n_t; // min: 1
-    size_t i, search_ending; // which byte to process
+    size_t i, search_ending1, search_ending2; // which byte to process
     size_t beg_byte_pos, end_byte_pos;
     for (i = tid*bytes_per_thread; i/*+bytes_per_thread*/ < tot_bytes; i += n_t*bytes_per_thread) {
         // printf("i: %llu %llu\n",i,bytes_per_thread);
         // find begin byte:
-        beg_byte_pos = i==0 ? 0 : _find_full_nonfull_pos(i, i+bytes_per_thread+1, d_skms); // if i==0 begin position is ULL_MAX+1=0, begins from 0
+        search_ending1 = i+bytes_per_thread-1 < tot_bytes ? i+bytes_per_thread-1 : tot_bytes;
+        beg_byte_pos = i<2 ? 0 : _find_full_nonfull_pos(i-2, search_ending1, d_skms); // if i==0 begin position is ULL_MAX+1=0, begins from 0
         // find end byte: (make sure the last full byte is in the area of at least the next thread)
-        search_ending = i+2*bytes_per_thread < tot_bytes ? i+2*bytes_per_thread : tot_bytes;
-        end_byte_pos = _find_full_nonfull_pos (i+bytes_per_thread, search_ending, d_skms);
-        end_byte_pos = (end_byte_pos < tot_bytes) * end_byte_pos + (end_byte_pos >= tot_bytes) * tot_bytes;
-        if (beg_byte_pos < tot_bytes) {
+        search_ending2 = i+2*bytes_per_thread < tot_bytes ? i+2*bytes_per_thread : tot_bytes;
+        end_byte_pos = _find_full_nonfull_pos (search_ending1-1, search_ending2, d_skms);
+        end_byte_pos = (end_byte_pos < search_ending2) * end_byte_pos + (end_byte_pos >= search_ending2) * search_ending2; // DEBUGGED DONE
+        // end_byte_pos = (end_byte_pos < tot_bytes) * end_byte_pos + (end_byte_pos >= tot_bytes) * tot_bytes;
+        if (beg_byte_pos < end_byte_pos) {
+            if (tot_bytes == 25109) printf("[%d] %llu-%llu\n",tid,beg_byte_pos,end_byte_pos);
             // printf("%llu process %llu %llu (%d %llu)\n",tot_bytes, beg_byte_pos, end_byte_pos, tid, i);
             // printf("%llu %llu\n",beg_byte_pos,end_byte_pos);
             _process_bytes(beg_byte_pos, end_byte_pos, d_skms, d_kmers, d_kmer_store_pos, k);
@@ -306,6 +332,7 @@ void Extract_Kmers_Compressed (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_k
     return;
 }
 
+// deprecated
 __host__ size_t kmc_counting_GPU (T_kvalue k,
                                SKMStoreNoncon &skms_store, CUDAParams &gpars,
                                unsigned short kmer_min_freq, unsigned short kmer_max_freq,
@@ -433,7 +460,7 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
     for (i=0; i<n_streams; i++) {
         CUDA_CHECK(cudaStreamCreate(&streams[i]));
         // logger->log("GPU "+to_string(gpuid)+" Stream "+to_string(i)+" counting Partition "+to_string(skms_stores[i]->id), Logger::LV_INFO);
-        logs += "\tS "+to_string(i)+" Part "+to_string(skms_stores[i]->id);
+        logs += "\tS "+to_string(i)+" Part "+to_string(skms_stores[i]->id); //+" "+to_string(skms_stores[i]->tot_size_bytes)+"|"+to_string(skms_stores[i]->kmer_cnt);
         if (skms_stores[i]->tot_size_bytes != 0) {
             // ---- 0. Extract kmers from SKMStore: ---- 
             kmers_d_vec[i] = thrust::device_vector<T_kmer>(skms_stores[i]->kmer_cnt);

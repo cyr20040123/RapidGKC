@@ -150,7 +150,7 @@ int main (int argc, char** argvs) {
     gpars.device_id = 0;
     gpars.n_devices = PAR.n_devices;
     gpars.n_streams = PAR.n_streams;
-    gpars.n_streams_phase2 = PAR.n_streams;
+    gpars.n_streams_phase2 = PAR.n_streams_phase2;
     gpars.NUM_BLOCKS_PER_GRID = PAR.grid_size;
     gpars.NUM_THREADS_PER_BLOCK = PAR.block_size;
     gpars.items_stream_mul = PAR.reads_per_stream_mul;

@@ -76,7 +76,8 @@ void GlobalParams::ArgParser(int argc, char* argvs[]) {
         else if (!strcmp(argvs[i], "-grid")) grid_size = atoi(argvs[++i]);
         else if (!strcmp(argvs[i], "-block")) block_size = atoi(argvs[++i]);
         else if (!strcmp(argvs[i], "-ngpu")) n_devices = atoi(argvs[++i]);
-        else if (!strcmp(argvs[i], "-nstream")) n_streams = atoi(argvs[++i]);
+        else if (!strcmp(argvs[i], "-ns1")) n_streams = atoi(argvs[++i]);
+        else if (!strcmp(argvs[i], "-ns2")) n_streams_phase2 = atoi(argvs[++i]);
         else if (!strcmp(argvs[i], "-rps")) reads_per_stream_mul = atoi(argvs[++i]);
         else if (!strcmp(argvs[i], "-gc")) GPU_compression = true;
         else if (!strcmp(argvs[i], "-read")) {

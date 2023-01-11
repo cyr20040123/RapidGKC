@@ -146,7 +146,7 @@ __device__ size_t _find_full_nonfull_pos (size_t beg, size_t end, byte* d_skms) 
 //         // find end byte: (make sure the last full byte is in the area of at least the next thread)
 //         search_ending = i+2*bytes_per_thread < tot_bytes ? i+2*bytes_per_thread : tot_bytes;
 //         end_byte_pos = _find_full_nonfull_pos (i+bytes_per_thread, search_ending, d_skms);
-//         end_byte_pos = (end_byte_pos < tot_bytes) * end_byte_pos + (end_byte_pos >= tot_bytes) * tot_bytes;
+//         end_byte_pos = (end_byte_pos < search_ending) * end_byte_pos + (end_byte_pos >= search_ending) * search_ending;
 //         if (beg_byte_pos < tot_bytes) {
 //             // printf("%llu process %llu %llu (%d %llu)\n",tot_bytes, beg_byte_pos, end_byte_pos, tid, i);
 //             // printf("%llu %llu\n",beg_byte_pos,end_byte_pos);
@@ -173,7 +173,6 @@ __global__ void GPU_Extract_Kmers (byte* d_skms, size_t tot_bytes, T_kmer *d_kme
         end_byte_pos = (end_byte_pos < search_ending2) * end_byte_pos + (end_byte_pos >= search_ending2) * search_ending2; // DEBUGGED DONE
         // end_byte_pos = (end_byte_pos < tot_bytes) * end_byte_pos + (end_byte_pos >= tot_bytes) * tot_bytes;
         if (beg_byte_pos < end_byte_pos) {
-            if (tot_bytes == 25109) printf("[%d] %llu-%llu\n",tid,beg_byte_pos,end_byte_pos);
             // printf("%llu process %llu %llu (%d %llu)\n",tot_bytes, beg_byte_pos, end_byte_pos, tid, i);
             // printf("%llu %llu\n",beg_byte_pos,end_byte_pos);
             _process_bytes(beg_byte_pos, end_byte_pos, d_skms, d_kmers, d_kmer_store_pos, k);
@@ -322,7 +321,8 @@ void Extract_Kmers_Compressed (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_k
     //     d_store_pos += skms_store.skm_chunk_bytes[i];
     // }
     // ---- GPU work ----
-    GPU_Extract_Kmers<<<BpG, TpB, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
+    if (BpG * TpB >= skms_store.tot_size_bytes) GPU_Extract_Kmers<<<1, 1, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k); // 强行debug
+    else GPU_Extract_Kmers<<<BpG, TpB, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
     // GPU_Extract_Kmers_test<<<BpG, TpB, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
     
     CUDA_CHECK(cudaFreeAsync(d_skms, stream));
@@ -470,7 +470,6 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             tot_kmers[i] = kmers_d_vec[i].size();
         }
     }
-    logger->log(logs, Logger::LV_INFO);
 
     thrust::constant_iterator<T_kvalue> ik(k);
     vector<thrust::device_vector<bool>> same_flag_d_vec(n_streams); // for 3
@@ -532,5 +531,6 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
     for (i=0; i<n_streams; i++) {
         delete skms_stores[i];//
     }
+    logger->log(logs+" "+to_string(return_value), Logger::LV_INFO);
     return return_value; // total distinct kmer
 }

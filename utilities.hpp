@@ -125,6 +125,7 @@ public:
     int block_size = 256;
     int n_devices = 1;
     int n_streams = 6;
+    int n_streams_phase2 = 2;
     int reads_per_stream_mul = 1;
 
     bool GPU_compression = false;

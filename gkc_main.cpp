@@ -69,7 +69,7 @@ void GPUKmerCounting_TP(CUDAParams &gpars) {
     for (auto readfile:PAR.read_files) {
         ReadLoader::work_while_loading_V2(
             [&gpars, &skm_part_vec](vector<ReadPtr> &reads){process_reads_count(reads, gpars, skm_part_vec);},
-            2, PAR.read_files[0], PAR.Batch_read_loading, true, PAR.Buffer_fread_size_MB*ReadLoader::MB
+            min(2, PAR.N_threads), readfile, PAR.Batch_read_loading, true, PAR.Buffer_fread_size_MB*ReadLoader::MB
         );
         logger->log("-- ["+readfile+"] processed --", Logger::LV_NOTICE);
     }

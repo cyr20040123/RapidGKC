@@ -196,7 +196,8 @@ __device__ __forceinline__ bool new_filter(T_minimizer mm, int p) {
     return ((mm >> (p-2)*2) & 0b11) + ((mm >> (p-3)*2) & 0b11);
 }
 __device__ __forceinline__ bool new_filter2(T_minimizer mm, int p) {
-    return ((mm >> ((p-3)*2)) != 0) /*AAA*/ & (mm >> ((p-3)*2) != 0b000100) /*ACA*/ & (mm >> ((p-3)*2) != 0b001000);
+    // return ((mm >> ((p-3)*2)) != 0) /*AAA*/ & (mm >> ((p-3)*2) != 0b000100) /*ACA*/; //& (mm >> ((p-3)*2) != 0b001000) /*AGA*/;
+    return ((((mm >> ((p-3)*2)) & 0b111011) != 0/*no AAA ACA*/) & ((mm & 0b111111) != 0/*no AAA at last*/)); // TODO: WHY REMOVING "!=0" WILL BE DIFFERENT???
 }
 // KMC2 signature
 __device__ bool sign_filter(T_minimizer mm, int p) {
@@ -207,7 +208,7 @@ __device__ bool sign_filter(T_minimizer mm, int p) {
         t = t >> 2;
     }
     // printf("%d Minimizer: %x\n", flag & ((mm >> ((p-3)*2)) != 0) /*AAA*/ & (mm >> ((p-3)*2) != 0b000100), mm);
-    return flag & ((mm >> ((p-3)*2)) != 0) /*AAA*/ & (mm >> ((p-3)*2) != 0b000100) /*ACA*/;
+    return flag & (((mm >> ((p-3)*2)) & 0b111011) != 0); /*AAA ACA*/;
 }
 /*
  * [INPUT]  data.reads in [(Read#0), (Read#1)...]
@@ -272,6 +273,9 @@ __global__ void GPU_GenMinimizer(
     return;
 }
 
+__device__ __forceinline__ int _hash_partition (T_minimizer mm, int SKM_partitions) {
+    return (~mm) % SKM_partitions;
+}
 __device__ inline T_skm_len _skm_bytes_required (T_read_len beg, T_read_len end, int k) {
     return ((beg%3) + end+(k-1)-beg + 3) / 3; // +3 because skm_3x requires an extra empty byte
 }
@@ -325,7 +329,8 @@ __global__ void GPU_GenSKMOffs(
             skm[skm_count] = last_skm_pos; // skm #skm_count (begins from 1) ends at last_skm_pos
             // count skm part sizes
             if (new_skm) {
-                p_i = minimizers[i-1] % SKM_partitions;
+                // p_i = minimizers[i-1] % SKM_partitions;
+                p_i = _hash_partition(minimizers[i-1], SKM_partitions);
                 atomicAdd(&d_skm_part_bytes[p_i], _skm_bytes_required(skm[skm_count-1], skm[skm_count], K_kmer));
                 // atomicAdd(&d_skm_cnt[p_i], 1);
                 
@@ -341,7 +346,8 @@ __global__ void GPU_GenSKMOffs(
         // process the last skm
         skm_count += 1;
         skm[skm_count] = len-K_kmer+1;
-        p_i = minimizers[i-1] % SKM_partitions;
+        // p_i = minimizers[i-1] % SKM_partitions;
+        p_i = _hash_partition(minimizers[i-1], SKM_partitions);
         atomicAdd(&d_skm_part_bytes[p_i], _skm_bytes_required(skm[skm_count-1], skm[skm_count], K_kmer));
         // --- V1 ---
         // p_skm_cnt[p_i] ++;
@@ -446,7 +452,8 @@ __global__ void GPU_ExtractSKM (
             // printf("%d|%d\n",rid,i_skm);
             // for each skm of the current read, cur_read_skm_offs[0] == 0, loop begins from 1
             // -- store skm --
-            partition = d_minimizers[d_read_offs[rid] + cur_read_skm_offs[i_skm-1]] % SKM_partitions;
+            // partition = d_minimizers[d_read_offs[rid] + cur_read_skm_offs[i_skm-1]] % SKM_partitions;
+            partition = _hash_partition (d_minimizers[d_read_offs[rid] + cur_read_skm_offs[i_skm-1]], SKM_partitions);
             skm_size_bytes = _skm_bytes_required(cur_read_skm_offs[i_skm-1], cur_read_skm_offs[i_skm], K_kmer); // beg, end, k
             cur_skm_store_pos = atomicAdd(&d_store_pos[partition], skm_size_bytes); // assign space to store current skm
             memcpy(&d_skm_store_csr[d_skmpart_offs[partition] + cur_skm_store_pos], &cur_read[cur_read_skm_offs[i_skm-1]/BYTE_BASES], skm_size_bytes);

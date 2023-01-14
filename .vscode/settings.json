@@ -45,6 +45,7 @@
         "ios": "cpp",
         "utility": "cpp",
         "queue": "cpp",
-        "stack": "cpp"
+        "stack": "cpp",
+        "__config": "cpp"
     }
 }

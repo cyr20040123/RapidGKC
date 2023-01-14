@@ -32,7 +32,7 @@ void calVarStdev(vector<size_t> &vecNums) // calc avg max min var std cv (Coeffi
     logger->log("SKM TOT_LEN="+to_string(sumNum));
     // logger->log("SKM TOT_LEN="+sumNum); // seg fault ???
     stringstream ss;
-	ss << "AVG=" << mean << "\tMAX=" << max_val << "\tmin=" << min_val << "\tvar=" << variance << "\tSTD=" << stdev << "\tCV=" << stdev/double(mean) << endl;
+	ss << "SIZE=" << vecNums.size() << " AVG=" << mean << "\tMAX=" << max_val << "\tmin=" << min_val << "\tvar=" << variance << "\tSTD=" << stdev << "\tCV=" << stdev/double(mean) << endl;
     logger->log(ss.str());
 }
 
@@ -92,6 +92,10 @@ void GPUKmerCounting_TP(CUDAParams &gpars) {
     // GPUReset(gpars.device_id);
     // if (PAR.to_file) exit(0);
     
+    vector<size_t> partition_sizes;
+    for(i=0; i<PAR.SKM_partitions; i++) partition_sizes.push_back(skm_part_vec[i]->tot_size_bytes);
+    calVarStdev(partition_sizes);
+
     // ==== 2nd phase: superkmer extraction and kmer counting ====
     logger->log("**** Phase 2: Superkmer extraction and kmer counting ****", Logger::LV_NOTICE);
     logger->log("(with "+to_string(PAR.N_threads)+" threads)");
@@ -130,7 +134,7 @@ void GPUKmerCounting_TP(CUDAParams &gpars) {
     
     double p2_time = wct2.stop();
     logger->log("**** Kmer counting finished (Phase 2 ends) ****", Logger::LV_NOTICE);
-    logger->log("     Phase 2 Time: " + to_string(p2_time) + " sec", Logger::LV_INFO);
+    logger->log("     Phase 2 Time: " + to_string(p2_time) + " sec (P1: " + to_string(p1_time) + " s)", Logger::LV_INFO);
 
     // for (i=0; i<PAR.SKM_partitions; i++) delete skm_part_vec[i];// deleted in kmc_counting_GPU
     return;

@@ -313,7 +313,7 @@ public:
                 read_cnt += _proc_res[i].get(); // wait for the previous round
         }
         read_cnt += proc_func(i_break, true); // process the data in the last pbuf
-        cerr<<endl<<"File closed: "<<fclose(readfile)<<endl<<endl;
+        cerr<<"File closed: "<<fclose(readfile)<<endl;
     }
 
     size_t get_file_size(const char *filename) {

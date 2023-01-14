@@ -62,6 +62,7 @@ void GlobalParams::ArgParser(int argc, char* argvs[]) {
     // exe <k> <p> <tmp_file_folder> <_Kmer_filter>
     for (int i=1; i<argc-1; i++) {
         if (!strcmp(argvs[i], "-t")) N_threads = atoi(argvs[++i]);
+        else if (!strcmp(argvs[i], "-rdt")) RD_threads_min = atoi(argvs[++i]);
         else if (!strcmp(argvs[i], "-k")) K_kmer = atoi(argvs[++i]);
         else if (!strcmp(argvs[i], "-p")) P_minimizer = atoi(argvs[++i]);
         else if (!strcmp(argvs[i], "-skm")) SKM_partitions = atoi(argvs[++i]);

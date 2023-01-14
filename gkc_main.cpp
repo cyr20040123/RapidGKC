@@ -18,13 +18,17 @@ Logger *logger;
 void calVarStdev(vector<size_t> &vecNums) // calc avg max min var std cv (Coefficient of variation)
 {
     size_t max_val = 0, min_val = 0xffffffffffffffff;
-	size_t sumNum = accumulate(vecNums.begin(), vecNums.end(), 0);
+    int max_id = -1;
+	size_t sumNum = 0;//accumulate(vecNums.begin(), vecNums.end(), 0);
+    for (auto &item: vecNums) sumNum += item;
 	size_t mean = sumNum / vecNums.size();
 	double accum = 0.0;
+    int i=0;
 	for_each(vecNums.begin(), vecNums.end(), [&](const size_t d) {
 		accum += (d - mean)*(d - mean);
-        if (d>max_val) max_val = d;
+        if (d>max_val) {max_val = d; max_id = i;}
         if (d<min_val) min_val = d;
+        i++;
 	});
 	double variance = accum / vecNums.size();
 	double stdev = sqrt(variance);
@@ -32,7 +36,7 @@ void calVarStdev(vector<size_t> &vecNums) // calc avg max min var std cv (Coeffi
     logger->log("SKM TOT_LEN="+to_string(sumNum));
     // logger->log("SKM TOT_LEN="+sumNum); // seg fault ???
     stringstream ss;
-	ss << "SIZE=" << vecNums.size() << " AVG=" << mean << "\tMAX=" << max_val << "\tmin=" << min_val << "\tvar=" << variance << "\tSTD=" << stdev << "\tCV=" << stdev/double(mean) << endl;
+	ss << "SIZE=" << vecNums.size() << " AVG=" << mean << "\tMAX=" << max_val << " @" << max_id << "\tmin=" << min_val << "\tvar=" << variance << "\tSTD=" << stdev << "\tCV=" << stdev/double(mean) << endl;
     logger->log(ss.str());
 }
 
@@ -69,9 +73,9 @@ void GPUKmerCounting_TP(CUDAParams &gpars) {
     for (auto readfile:PAR.read_files) {
         ReadLoader::work_while_loading_V2(
             [&gpars, &skm_part_vec](vector<ReadPtr> &reads){process_reads_count(reads, gpars, skm_part_vec);},
-            min(2, PAR.N_threads), readfile, PAR.Batch_read_loading, true, PAR.Buffer_fread_size_MB*ReadLoader::MB
+            min(PAR.RD_threads_min, PAR.N_threads), readfile, PAR.Batch_read_loading, true, PAR.Buffer_fread_size_MB*ReadLoader::MB
         );
-        logger->log("-- ["+readfile+"] processed --", Logger::LV_NOTICE);
+        logger->log("-- ["+readfile+"] processed --\n", Logger::LV_NOTICE);
     }
     
     double p1_time = wct1.stop();

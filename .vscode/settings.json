@@ -46,6 +46,8 @@
         "utility": "cpp",
         "queue": "cpp",
         "stack": "cpp",
-        "__config": "cpp"
+        "__config": "cpp",
+        "limits": "cpp",
+        "algorithm": "cpp"
     }
 }

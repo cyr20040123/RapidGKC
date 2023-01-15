@@ -48,7 +48,7 @@ enum CountTask {SKMPartition, SKMPartWithPos, StoreMinimizerPos}; // 正常kmc, 
 //     T_CSR_cap *reads_offs, T_minimizer *minimizers, 
 //     int n_partitions, int k, atomic<size_t> part_sizes[]);
 
-void GPUReset (int did);
+size_t GPUReset (int did);
 
 void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
     const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars, CountTask task,

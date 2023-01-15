@@ -117,6 +117,7 @@ public:
     string tmp_file_folder = "/home/cyr/tmp/";
     bool to_file = true;
     string log_file_folder = "./log/";
+    int log_lv = 5;
     vector<string> read_files;
     
     T_read_cnt Batch_read_loading = 2000;
@@ -140,6 +141,7 @@ struct CUDAParams {
     int n_streams_phase2;
     int n_devices;
     atomic<int> device_id;
+    vector<size_t> vram;
 };
 
 // ================ Read Sorting ================

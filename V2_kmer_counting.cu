@@ -445,10 +445,10 @@ __host__ size_t kmc_counting_GPU (T_kvalue k,
 __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
                                vector<SKMStoreNoncon*> skms_stores, CUDAParams &gpars,
                                unsigned short kmer_min_freq, unsigned short kmer_max_freq,
-                               _out_ vector<T_kmc> kmc_result_curthread [],
+                               _out_ vector<T_kmc> kmc_result_curthread [], int gpuid, 
                                bool GPU_compression = false) {
     // using CUDA Thrust
-    int gpuid = (gpars.device_id++)%gpars.n_devices;
+    // int gpuid = (gpars.device_id++)%gpars.n_devices;
     CUDA_CHECK(cudaSetDevice(gpuid));
     
     size_t return_value = 0;
@@ -533,6 +533,6 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
     for (i=0; i<n_streams; i++) {
         delete skms_stores[i];//
     }
-    logger->log(logs+" "+to_string(return_value), Logger::LV_INFO);
+    logger->log(logs+" "+to_string(return_value), Logger::LV_DEBUG);
     return return_value; // total distinct kmer
 }

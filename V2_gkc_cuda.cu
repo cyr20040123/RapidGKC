@@ -484,14 +484,16 @@ __global__ void MoveOffset(_in_ T_read_cnt d_reads_cnt, _in_ _out_ T_CSR_cap *d_
     return;
 }
 
-__host__ void GPUReset(int did) {
+__host__ size_t GPUReset(int did) {
     cerr<<"now reset GPU "<<did<<endl;
     // do not call it after host malloc
     CUDA_CHECK(cudaSetDevice(did));
     CUDA_CHECK(cudaDeviceReset());
     // CUDA_CHECK(cudaInitDevice(did, ));
+    size_t avail, total;
+    cudaMemGetInfo(&avail, &total);
     CUDA_CHECK(cudaDeviceSynchronize());
-    return;
+    return avail;
 }
 
 __host__ void SKM_Compression_COMP (const int SKM_partitions, T_h_data host_data, T_d_data gpu_data, cudaStream_t stream, _out_ GdeflateManager *&nvcomp_managers, _out_ std::vector<byte*> &comp_result_buffers) {

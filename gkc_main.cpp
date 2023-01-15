@@ -15,17 +15,17 @@ using namespace std;
 
 Logger *logger;
 
-void calVarStdev(vector<size_t> &vecNums) // calc avg max min var std cv (Coefficient of variation)
+size_t calVarStdev(vector<size_t> &vecNums) // calc avg max min var std cv (Coefficient of variation)
 {
     size_t max_val = 0, min_val = 0xffffffffffffffff;
     int max_id = -1;
-	size_t sumNum = 0;//accumulate(vecNums.begin(), vecNums.end(), 0);
+    size_t sumNum = 0;//accumulate(vecNums.begin(), vecNums.end(), 0);
     for (auto &item: vecNums) sumNum += item;
 	size_t mean = sumNum / vecNums.size();
 	double accum = 0.0;
     int i=0;
 	for_each(vecNums.begin(), vecNums.end(), [&](const size_t d) {
-		accum += (d - mean)*(d - mean);
+        accum += (d - mean)*(d - mean);
         if (d>max_val) {max_val = d; max_id = i;}
         if (d<min_val) min_val = d;
         i++;
@@ -33,11 +33,12 @@ void calVarStdev(vector<size_t> &vecNums) // calc avg max min var std cv (Coeffi
 	double variance = accum / vecNums.size();
 	double stdev = sqrt(variance);
     
-    logger->log("SKM TOT_LEN="+to_string(sumNum));
+    // logger->log("SKM TOT_LEN="+to_string(sumNum), Logger::LV_INFO);
     // logger->log("SKM TOT_LEN="+sumNum); // seg fault ???
     stringstream ss;
 	ss << "SIZE=" << vecNums.size() << " AVG=" << mean << "\tMAX=" << max_val << " @" << max_id << "\tmin=" << min_val << "\tvar=" << variance << "\tSTD=" << stdev << "\tCV=" << stdev/double(mean) << endl;
-    logger->log(ss.str());
+    logger->log(ss.str(), Logger::LV_INFO);
+    return max_val;
 }
 
 /// @brief Will be called in file loading
@@ -80,7 +81,7 @@ void GPUKmerCounting_TP(CUDAParams &gpars) {
     
     double p1_time = wct1.stop();
     logger->log("**** All reads loaded and SKMs generated (Phase 1 ends) ****", Logger::LV_NOTICE);
-    logger->log("     Phase 1 Time: " + to_string(p1_time) + " sec", Logger::LV_INFO);
+    logger->log("     Phase 1 Time: " + to_string(p1_time) + " sec", Logger::LV_NOTICE);
 
     size_t skm_tot_cnt = 0, skm_tot_bytes = 0, kmer_tot_cnt = 0;
     for(i=0; i<PAR.SKM_partitions; i++) {
@@ -89,8 +90,8 @@ void GPUKmerCounting_TP(CUDAParams &gpars) {
         skm_tot_bytes += skm_part_vec[i]->tot_size_bytes;
         if (PAR.to_file) skm_part_vec[i]->close_file();
     }
-    logger->log("SKM TOT CNT = " + to_string(skm_tot_cnt) + " BYTES = " + to_string(skm_tot_bytes));
-    logger->log("KMER TOT CNT = " + to_string(kmer_tot_cnt));
+    logger->log("SKM TOT CNT = " + to_string(skm_tot_cnt) + " BYTES = " + to_string(skm_tot_bytes), Logger::LV_INFO);
+    logger->log("KMER TOT CNT = " + to_string(kmer_tot_cnt), Logger::LV_INFO);
 
     // cout<<"Continue? ..."; char tmp; cin>>tmp;
     // GPUReset(gpars.device_id);
@@ -117,11 +118,32 @@ void GPUKmerCounting_TP(CUDAParams &gpars) {
     //     });
     // }
     // multi-stream phase 2
-    for (i=0; i<PAR.SKM_partitions; i+=gpars.n_streams_phase2) {
+    // V1:
+    // for (i=0; i<PAR.SKM_partitions; i+=gpars.n_streams_phase2) {
+    //     vector<SKMStoreNoncon*> store_vec;
+    //     for (int j=i; j<min(PAR.SKM_partitions, i+gpars.n_streams_phase2); j++) store_vec.push_back(skm_part_vec[j]);
+    //     distinct_kmer_cnt[i] = tp.commit_task([store_vec, &gpars, &kmc_result] () {
+    //         return kmc_counting_GPU_streams (PAR.K_kmer, store_vec, gpars, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result, (gpars.device_id++)%gpars.n_devices, PAR.GPU_compression);
+    //     });
+    // }
+    // V2: auto streams
+    // todo: available gpu mem = GPU_VRAM // N_THREADS * N_GPUS, required: kmer_cnt * [8|16] * 3;
+    int max_streams = min((PAR.SKM_partitions+max(PAR.n_devices, PAR.N_threads)) / max(PAR.n_devices, PAR.N_threads), PAR.n_streams_phase2);
+    for (i=0; i<PAR.SKM_partitions; ) {
+        int gpuid = (gpars.device_id++)%gpars.n_devices;
+        int t = i;
+        size_t vram_avail = gpars.vram[gpuid]*2;
         vector<SKMStoreNoncon*> store_vec;
-        for (int j=i; j<min(PAR.SKM_partitions, i+gpars.n_streams_phase2); j++) store_vec.push_back(skm_part_vec[j]);
-        distinct_kmer_cnt[i] = tp.commit_task([store_vec, &gpars, &kmc_result] () {
-            return kmc_counting_GPU_streams (PAR.K_kmer, store_vec, gpars, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result, PAR.GPU_compression);
+        for (; i<PAR.SKM_partitions; i++) {
+            if (vram_avail - skm_part_vec[i]->kmer_cnt * sizeof(T_kmer) * 3 > gpars.vram[gpuid] * 1.2 && store_vec.size() < max_streams) {
+                store_vec.push_back(skm_part_vec[i]);
+                vram_avail -= skm_part_vec[i]->kmer_cnt * sizeof(T_kmer) * 3;
+            }
+            else break;
+        }
+        if (store_vec.size() == 0) logger->log("VRAM NOT ENOUGH @ PART"+to_string(i)+": REQUIRED="+to_string(skm_part_vec[i]->kmer_cnt * sizeof(T_kmer) * 3)+" AVAILABLE="+to_string(vram_avail), Logger::LV_ERROR);
+        else distinct_kmer_cnt[t] = tp.commit_task([store_vec, &gpars, &kmc_result, gpuid] () {
+            return kmc_counting_GPU_streams (PAR.K_kmer, store_vec, gpars, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result, gpuid, PAR.GPU_compression);
         });
     }
     tp.finish();
@@ -134,21 +156,22 @@ void GPUKmerCounting_TP(CUDAParams &gpars) {
     }
     cerr<<endl;
     
-    logger->log("Total number of distinct kmers: "+to_string(distinct_kmer_cnt_tot));
+    logger->log("Total number of distinct kmers: "+to_string(distinct_kmer_cnt_tot), Logger::LV_NOTICE);
     
     double p2_time = wct2.stop();
     logger->log("**** Kmer counting finished (Phase 2 ends) ****", Logger::LV_NOTICE);
-    logger->log("     Phase 2 Time: " + to_string(p2_time) + " sec (P1: " + to_string(p1_time) + " s)", Logger::LV_INFO);
+    logger->log("     Phase 2 Time: " + to_string(p2_time) + " sec (P1: " + to_string(p1_time) + " s)", Logger::LV_NOTICE);
 
     // for (i=0; i<PAR.SKM_partitions; i++) delete skm_part_vec[i];// deleted in kmc_counting_GPU
     return;
 }
 
 int main (int argc, char** argvs) {
-    cerr<<"================ PROGRAM BEGINS ================"<<endl;
-    Logger _logger(0, Logger::LV_DEBUG, true, "./");
-    logger = &_logger;
     PAR.ArgParser(argc, argvs);
+    
+    cerr<<"================ PROGRAM BEGINS ================"<<endl;
+    Logger _logger(0, static_cast<Logger::LogLevel>(PAR.log_lv), true, "./");
+    logger = &_logger;
     
     stringstream ss;
     for(int i=0; i<argc; i++) ss<<argvs[i]<<" ";
@@ -163,7 +186,7 @@ int main (int argc, char** argvs) {
     gpars.NUM_THREADS_PER_BLOCK = PAR.block_size;
     gpars.items_stream_mul = PAR.reads_per_stream_mul;
 
-    for (int i=0; i<gpars.n_devices; i++) GPUReset(i); // must before not after pinned memory allocation
+    for (int i=0; i<gpars.n_devices; i++) gpars.vram.push_back(GPUReset(i)); // must before not after pinned memory allocation
 
     WallClockTimer wct_oa;
     cerr<<"----------------------------------------------"<<endl;

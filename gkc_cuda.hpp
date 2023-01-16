@@ -53,7 +53,7 @@ size_t GPUReset (int did);
 void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
     const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars, CountTask task,
     const int SKM_partitions, vector<SKMStoreNoncon*> skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
-    bool GPU_compression
+    int tid, bool GPU_compression
     /*atomic<size_t> skm_part_sizes[]*/);
 
 #endif

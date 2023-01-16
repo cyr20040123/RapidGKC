@@ -557,13 +557,19 @@ __host__ void SKM_Compression_COLLECT (GdeflateManager *nvcomp_managers, std::ve
 __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
     const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars, CountTask task,
     const int SKM_partitions, vector<SKMStoreNoncon*> skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
-    bool GPU_compression
+    int tid, bool GPU_compression
     /*atomic<size_t> skm_part_sizes[]*/) {
     
     int time_all=0, time_filter=0;
 
     int gpuid = (gpars.device_id++) % gpars.n_devices;
     CUDA_CHECK(cudaSetDevice(gpuid));
+    // V2:
+    // if (gpars.gpuid_thread[tid] == -1) {
+    //     CUDA_CHECK(cudaSetDevice(tid%gpars.n_devices));
+    //     gpars.gpuid_thread[tid] = tid%gpars.n_devices;
+    // }
+    // int gpuid = gpars.gpuid_thread[tid];
     // CUDA_CHECK(cudaDeviceSynchronize());
     
     cudaStream_t streams[gpars.n_streams];

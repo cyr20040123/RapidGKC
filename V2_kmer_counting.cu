@@ -445,11 +445,17 @@ __host__ size_t kmc_counting_GPU (T_kvalue k,
 __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
                                vector<SKMStoreNoncon*> skms_stores, CUDAParams &gpars,
                                unsigned short kmer_min_freq, unsigned short kmer_max_freq,
-                               _out_ vector<T_kmc> kmc_result_curthread [], int gpuid, 
+                               _out_ vector<T_kmc> kmc_result_curthread [], int tid,
                                bool GPU_compression = false) {
     // using CUDA Thrust
-    // int gpuid = (gpars.device_id++)%gpars.n_devices;
+    int gpuid = (gpars.device_id++)%gpars.n_devices;
     CUDA_CHECK(cudaSetDevice(gpuid));
+    // V2:
+    // if (gpars.gpuid_thread[tid] == -1) {
+    //     CUDA_CHECK(cudaSetDevice(tid%gpars.n_devices));
+    //     gpars.gpuid_thread[tid] = tid%gpars.n_devices;
+    // }
+    // int gpuid = gpars.gpuid_thread[tid];
     
     size_t return_value = 0;
     int i, n_streams = skms_stores.size();
@@ -467,8 +473,8 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             // ---- 0. Extract kmers from SKMStore: ---- 
             kmers_d_vec[i] = thrust::device_vector<T_kmer>(skms_stores[i]->kmer_cnt);
             T_kmer *d_kmers_data = thrust::raw_pointer_cast(kmers_d_vec[i].data());
-            if (GPU_compression) Extract_Kmers_Compressed(*skms_stores[i], k, d_kmers_data, streams[i], gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, gpuid);
-            else Extract_Kmers(*skms_stores[i], k, d_kmers_data, streams[i], gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK);
+            if (GPU_compression) Extract_Kmers_Compressed(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG, gpars.TpB, gpuid);
+            else Extract_Kmers(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG, gpars.TpB);
             tot_kmers[i] = kmers_d_vec[i].size();
         }
     }

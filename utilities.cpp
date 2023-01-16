@@ -77,6 +77,8 @@ void GlobalParams::ArgParser(int argc, char* argvs[]) {
         else if (!strcmp(argvs[i], "-rb")) Batch_read_loading = atoi(argvs[++i]);
         else if (!strcmp(argvs[i], "-grid")) grid_size = atoi(argvs[++i]);
         else if (!strcmp(argvs[i], "-block")) block_size = atoi(argvs[++i]);
+        else if (!strcmp(argvs[i], "-grid2")) grid_size2 = atoi(argvs[++i]);
+        else if (!strcmp(argvs[i], "-block2")) block_size2 = atoi(argvs[++i]);
         else if (!strcmp(argvs[i], "-ngpu")) n_devices = atoi(argvs[++i]);
         else if (!strcmp(argvs[i], "-ns1")) n_streams = atoi(argvs[++i]);
         else if (!strcmp(argvs[i], "-ns2")) n_streams_phase2 = atoi(argvs[++i]);

@@ -438,7 +438,7 @@ public:
     //     return;
     // }
 
-    static void work_while_loading_V2 (std::function<void(vector<ReadPtr>&)> work_func, int loader_threads, string filename, 
+    static void work_while_loading_V2 (std::function<void(vector<ReadPtr>&, int)> work_func, int loader_threads, string filename, 
         T_read_cnt batch_size=5000, bool delete_after_proc=false, size_t buffer_size = 20 * ReadLoader::MB)
     {
         ThreadPool<void> tp(PAR.N_threads);
@@ -463,8 +463,8 @@ public:
                         reads = new vector<ReadPtr>();//
                         reads_loaded = rl.get_reads(*reads, n_read_loaded, batch_size);
                         // ... process reads
-                        tp.commit_task([reads, &work_func, delete_after_proc, &rl, n_read_loaded, reads_loaded](){
-                            work_func(*reads); delete reads;//
+                        tp.commit_task([reads, &work_func, delete_after_proc, &rl, n_read_loaded, reads_loaded](int tid){
+                            work_func(*reads, tid); delete reads;//
                             if (delete_after_proc) assert(!rl.delete_read_buffers(n_read_loaded, reads_loaded));
                         });
                         n_read_loaded += reads_loaded;
@@ -475,8 +475,8 @@ public:
                         reads = new vector<ReadPtr>();//
                         reads_loaded = rl.get_reads(*reads, n_read_loaded, -1);
                         // ... process reads
-                        tp.commit_task([reads, &work_func, delete_after_proc, &rl, n_read_loaded, reads_loaded](){
-                            work_func(*reads); delete reads;//
+                        tp.commit_task([reads, &work_func, delete_after_proc, &rl, n_read_loaded, reads_loaded](int tid){
+                            work_func(*reads, tid); delete reads;//
                             if (delete_after_proc) assert(!rl.delete_read_buffers(n_read_loaded, reads_loaded));
                         });
                         // if (delete_after_proc) rl.delete_read_buffers(n_read_loaded, reads_loaded);

@@ -26,7 +26,7 @@ private:
     
     mutex _queue_mtx; // for locking two queues below
     
-    queue<function<T_OUT(/*T_IN*/)>> _tasks;
+    queue<function<T_OUT(int/*T_IN*/)>> _tasks;
     queue<promise<T_OUT>*> _task_promises;   // OUTPUTS
     atomic<bool> _task_queue_empty{true};    // must be atomic (SWMR)
     
@@ -40,11 +40,11 @@ private:
     }
     
     template<typename NONVOID>
-    inline void _set_promise(std::promise<NONVOID> & prom, function<T_OUT()> & func) {
-        prom.set_value(func()); // non-void promise
+    inline void _set_promise(std::promise<NONVOID> & prom, function<T_OUT(int/*T_IN*/)> & func, int tid=-1) {
+        prom.set_value(func(tid)); // non-void promise
     }
-    inline void _set_promise(std::promise<void> & prom, function<T_OUT()> & func) {
-        func();
+    inline void _set_promise(std::promise<void> & prom, function<T_OUT(int/*T_IN*/)> & func, int tid=-1) {
+        func(tid);
         prom.set_value(); // void promise
     }
     void _worker (int tid = -1) {
@@ -61,7 +61,7 @@ private:
                 _queue_mtx.unlock();//
                 continue;
             }
-            function<T_OUT(/*T_IN*/)> func = _tasks.front();
+            function<T_OUT(int/*T_IN*/)> func = _tasks.front();
             _tasks.pop();
             promise<T_OUT> *prom = _task_promises.front();
             _task_promises.pop();
@@ -70,9 +70,9 @@ private:
             _queue_mtx.unlock();//
             // -- (mutex zone ends) --
 
-            if (prom == nullptr) func(); // TODO remove
+            if (prom == nullptr) func(tid); // TODO remove
             // else prom->set_value(func());
-            else _set_promise(*prom, func);
+            else _set_promise(*prom, func, tid);
         }
     }
     inline void _check_finished() {
@@ -97,7 +97,7 @@ public:
             if (t.joinable()) t.join();
         }
     }
-    future<T_OUT> commit_task(function<T_OUT(/*T_IN*/)> task_func) {
+    future<T_OUT> commit_task(function<T_OUT(int/*T_IN*/)> task_func) {
         _check_finished();
         unique_lock<mutex> tmp_lck(_queue_mtx);
         _tasks.push(task_func);
@@ -107,7 +107,7 @@ public:
         _holder_cv.notify_all();
         return _task_promises.back()->get_future();
     }
-    void commit_task_no_return(function<T_OUT(/*T_IN*/)> task_func) { // not used
+    void commit_task_no_return(function<T_OUT(int/*T_IN*/)> task_func) { // not used
         _check_finished();
         unique_lock<mutex> tmp_lck(_queue_mtx);
         _tasks.push(task_func);

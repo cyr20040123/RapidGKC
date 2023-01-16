@@ -125,6 +125,8 @@ public:
 
     int grid_size = 8;
     int block_size = 256;
+    int grid_size2 = 16;
+    int block_size2 = 512;
     int n_devices = 1;
     int n_streams = 6;
     int n_streams_phase2 = 2;
@@ -137,11 +139,13 @@ public:
 
 struct CUDAParams {
     int NUM_BLOCKS_PER_GRID, NUM_THREADS_PER_BLOCK;
+    int BpG, TpB; // for step 2
     int n_streams, items_stream_mul;
     int n_streams_phase2;
     int n_devices;
     atomic<int> device_id;
     vector<size_t> vram;
+    vector<int> gpuid_thread;
 };
 
 // ================ Read Sorting ================

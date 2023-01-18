@@ -290,12 +290,14 @@ public:
         }
 
         // Load and process the file:
+        ThreadPool<int> tp(_n_threads);
         int i = 0, i_break;
         size_t tmp_size; // i_thread
         bool not_1st_loop = false;
         while ((tmp_size = fread(_buf_cur[i], sizeof(char), CUR_BUF_SIZE, readfile)) > 0) {
             _buf_cur[i][tmp_size] = 0;
-            _proc_res[i] = async(std::launch::async, proc_func, i, false);
+            // _proc_res[i] = async(std::launch::async, proc_func, i, false);
+            _proc_res[i] = tp.commit_task([i, &proc_func](int tid){return proc_func(i, false);});
             i = (i+1) % _n_threads;
             not_1st_loop |= i==0;
             if (not_1st_loop) {
@@ -304,6 +306,7 @@ public:
                 while (read_cnt - reads_consumed > 2 * batch_size) this_thread::sleep_for(1ms);
             }
         }
+        tp.finish();
         i_break = i;
         if (not_1st_loop) {
             for (i = (i+1)%_n_threads; i != i_break; i = (i+1)%_n_threads)
@@ -398,45 +401,6 @@ public:
         return !(n-beg==n_reads);
     }
     
-
-    // static void work_while_loading (std::function<void(vector<ReadPtr>&)> work_func, int loader_threads, string filename, 
-    //     T_read_cnt batch_size=5000, bool delete_after_proc=false, size_t buffer_size = 20 * ReadLoader::MB)
-    // {
-    //     vector<ReadPtr> reads;
-    //     ReadLoader rl(loader_threads, filename, batch_size, buffer_size);
-    //     future<void> file_loading_res = async(std::launch::async, [&rl](){return rl.load_file();});
-        
-    //     T_read_cnt n_read_loaded = 0, reads_loaded;
-    //     bool loading_not_finished = true;
-    //     future_status status;
-    //     while (loading_not_finished) {
-    //         status = file_loading_res.wait_for(1ms); // TODO: set smaller when storage is fast
-    //         switch (status) {
-    //             case future_status::deferred:
-    //             case future_status::timeout:
-    //                 if (rl.get_read_cnt() - n_read_loaded >= batch_size) {
-    //                     reads.clear();
-    //                     reads_loaded = rl.get_reads(reads, n_read_loaded, batch_size);
-    //                     // ... process reads
-    //                     work_func(reads);
-    //                     if (delete_after_proc) assert(!rl.delete_read_buffers(n_read_loaded, reads_loaded));
-    //                     n_read_loaded += reads_loaded;
-    //                 }
-    //                 break;
-    //             case future_status::ready:  // all reads are loaded
-    //                 reads.clear();
-    //                 reads_loaded = rl.get_reads(reads, n_read_loaded, -1);
-    //                 // ... process reads
-    //                 work_func(reads);
-    //                 if (delete_after_proc) rl.delete_read_buffers(n_read_loaded, reads_loaded);
-    //                 n_read_loaded += reads_loaded;
-    //                 loading_not_finished = false;
-    //                 break;
-    //         }
-    //     }
-    //     cerr<<"Total reads loaded: "<<n_read_loaded<<endl;
-    //     return;
-    // }
 
     static void work_while_loading_V2 (std::function<void(vector<ReadPtr>&, int)> work_func, int loader_threads, string filename, 
         T_read_cnt batch_size=5000, bool delete_after_proc=false, size_t buffer_size = 20 * ReadLoader::MB)

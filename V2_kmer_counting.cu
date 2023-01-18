@@ -19,8 +19,8 @@ if (cuerr.cu_err != CUDA_SUCCESS) { \
 
 #define NULL_POS 0xFFFFFFFFFFFFFFFFUL
 
-#include "nvcomp/gdeflate.hpp"
-#include "nvcomp.hpp"
+// #include "nvcomp/gdeflate.hpp"
+// #include "nvcomp.hpp"
 
 #include <fcntl.h> // open
 #include <unistd.h> // close
@@ -41,7 +41,7 @@ if (cuerr.cu_err != CUDA_SUCCESS) { \
 #include "utilities.hpp"
 #include <fstream>
 using namespace std;
-using namespace nvcomp;
+// using namespace nvcomp;
 
 extern Logger *logger;
 
@@ -203,39 +203,6 @@ __global__ void GPU_Extract_Kmers_test (byte* d_skms, size_t tot_bytes, T_kmer *
 }
 #endif
 
-// TODO: use cufile to load file?
-// __host__ byte* load_SKM_from_file_GDS (SKMStoreNoncon &skms_store) {
-//     byte* d_skms;
-//     CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes));
-    
-//     int fd;
-//     CUfileError_t cf_status;
-//     CUfileDescr_t cf_descr;
-//     CUfileHandle_t cf_handl;
-//     ssize_t bytes_read;
-
-//     // cf_status = cuFileDriverOpen();
-//     // CUFILE_STATUS_CHECK(cf_status, __LINE__);
-//     fd = open(skms_store.filename.c_str(), O_RDONLY|O_DIRECT);
-//     cerr<<fd<<endl;
-//     cf_descr.handle.fd = fd;
-//     cf_descr.type = CU_FILE_HANDLE_TYPE_OPAQUE_FD;
-//     cf_status = cuFileHandleRegister(&cf_handl, &cf_descr); // 5030
-//     CUFILE_STATUS_CHECK(cf_status, __LINE__);
-//     cf_status = cuFileBufRegister(d_skms, skms_store.tot_size_bytes, 0);
-//     CUFILE_STATUS_CHECK(cf_status, __LINE__);
-//     WallClockTimer wct_file;
-//     bytes_read = cuFileRead(cf_handl, (void*) d_skms, skms_store.tot_size_bytes, 0, 0); // TODO: where is cuFileReadAsync???
-//     int speed = skms_store.tot_size_bytes*1000/1048576/wct_file.stop(true);
-//     logger->log(skms_store.filename+" File loading speed (MB/s): "+to_string(speed)+" "+to_string(bytes_read)+" "+to_string(skms_store.tot_size_bytes));
-//     assert(bytes_read == skms_store.tot_size_bytes);
-//     // cf_status = cuFileReadAsync(cf_handl, (void*) d_skms, &(skms_store.tot_size_bytes), 0, 0, &bytes_read, stream); // must enable NVreg_EnableStreamMemOPs=1
-//     cf_status = cuFileBufDeregister(d_skms);
-//     CUFILE_STATUS_CHECK(cf_status, __LINE__);
-//     cuFileHandleDeregister(cf_handl);
-//     close(fd);
-//     return d_skms;
-// }
 __host__ byte* load_SKM_from_file (SKMStoreNoncon &skms_store) {
     byte* d_skms;
     CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes));
@@ -284,164 +251,6 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kme
     return;
 }
 
-void Extract_Kmers_Compressed (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kmers, cudaStream_t &stream, int BpG=8, int TpB=256, int gpuid = 0) {
-    cerr<<"Uncompressed: "<<skms_store.tot_size_bytes<<"\tCompressed: "<<skms_store.tot_size_compressed<<endl;
-    cerr<<"Ratio: "<<(double)skms_store.tot_size_compressed / (double)skms_store.tot_size_bytes<<endl;
-    // cudaStream_t stream;
-    // CUDA_CHECK(cudaStreamCreate(&stream));
-    
-    byte* d_skms; // uncompressed skms
-    CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes));
-    
-    unsigned long long *d_kmer_store_pos;
-    CUDA_CHECK(cudaMallocAsync((void**) &(d_kmer_store_pos), sizeof(size_t), stream));
-    CUDA_CHECK(cudaMemsetAsync(d_kmer_store_pos, 0, sizeof(unsigned long long), stream));
-    
-    // decompression
-    const int chunk_size = 1 << 16;
-    GdeflateManager nvcomp_manager(chunk_size, 0, stream, gpuid);
-    size_t num_buffers = skms_store.skm_chunk_bytes.size();
-    size_t i;
-    vector<byte*> decomp_result_buffers(num_buffers);
-    byte* decompress_pos = d_skms;
-    const byte* comp_data[num_buffers];
-    for(i = 0; i < num_buffers; i++) {
-        CUDA_CHECK(cudaMallocAsync((void **)&comp_data[i], skms_store.skm_chunk_compressed_bytes[i], stream));
-        CUDA_CHECK(cudaMemcpyAsync((void*)comp_data[i], skms_store.skm_chunks[i], skms_store.skm_chunk_compressed_bytes[i], cudaMemcpyHostToDevice, stream));
-        auto decomp_config = nvcomp_manager.configure_decompression(comp_data[i]);
-        nvcomp_manager.decompress(decompress_pos, comp_data[i], decomp_config);
-        decompress_pos += skms_store.skm_chunk_bytes[i];
-    }
-    for(i = 0; i < num_buffers; i++)
-        cudaFreeAsync((void*)comp_data[i], stream);
-
-    // // ---- copy skm chunks H2D ----
-    // byte *d_store_pos = d_skms;
-    // for (i=0; i<skms_store.skm_chunk_bytes.size(); i++) {
-    //     CUDA_CHECK(cudaMemcpyAsync(d_store_pos, skms_store.skm_chunks[i], skms_store.skm_chunk_bytes[i], cudaMemcpyHostToDevice, stream));
-    //     d_store_pos += skms_store.skm_chunk_bytes[i];
-    // }
-    // ---- GPU work ----
-    GPU_Extract_Kmers<<<1, 1, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
-    // if (BpG * TpB / 16 >= skms_store.tot_size_bytes) GPU_Extract_Kmers<<<1, 1, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k); // 强行debug
-    // else GPU_Extract_Kmers<<<BpG, TpB, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
-    
-    CUDA_CHECK(cudaFreeAsync(d_skms, stream));
-    // CUDA_CHECK(cudaFreeAsync(d_kmers, stream));
-    CUDA_CHECK(cudaFreeAsync(d_kmer_store_pos, stream));
-    CUDA_CHECK(cudaStreamSynchronize(stream));
-    return;
-}
-
-// deprecated
-__host__ size_t kmc_counting_GPU (T_kvalue k,
-                               SKMStoreNoncon &skms_store, CUDAParams &gpars,
-                               unsigned short kmer_min_freq, unsigned short kmer_max_freq,
-                               _out_ vector<T_kmc> &kmc_result_curthread,
-                               bool GPU_compression = false) {
-    // using CUDA Thrust
-    int gpuid = (gpars.device_id++)%gpars.n_devices;
-    CUDA_CHECK(cudaSetDevice(gpuid));
-    cudaStream_t stream;
-    CUDA_CHECK(cudaStreamCreate(&stream));
-
-    logger->log("GPU "+to_string(gpuid)+" Counting partition "+to_string(skms_store.id), Logger::LV_INFO);
-    
-    if (skms_store.tot_size_bytes == 0) return 0;
-    
-    // 0. Extract kmers from SKMStore: (~65-85% time)
-    #ifdef TIMER
-    double wcts[10];
-    WallClockTimer wct0;
-    #endif
-    
-    // V2 - bulk: 2.5-2.7s
-    // thrust::device_vector<T_kmer> kmers_d(kmers_h);
-    // cout<<"Begin extract kmer"<<endl;
-    thrust::device_vector<T_kmer> kmers_d(skms_store.kmer_cnt);
-    T_kmer *d_kmers_data = thrust::raw_pointer_cast(kmers_d.data());
-    if (GPU_compression) Extract_Kmers_Compressed(skms_store, k, d_kmers_data, stream, gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, gpuid);
-    else {Extract_Kmers(skms_store, k, d_kmers_data, stream, 8, 256); CUDA_CHECK(cudaStreamSynchronize(stream));}
-    size_t tot_kmers = kmers_d.size();
-    // cerr<<"End extract kmer "<<tot_kmers<<" "<<skms_store.kmer_cnt<<endl;
-    // cerr<<est_kmer<<"|"<<db_skm<<"|"<<est_skm<<"|"<<tot_kmers<<endl;
-    
-    // 1. convert to canonical kmers (~3-8% time)
-    #ifdef TIMER
-    wcts[0] = wct0.stop();
-    // cerr<<wcts[0]<<endl;
-    // exit(1);
-    WallClockTimer wct1;
-    #endif
-    thrust::constant_iterator<T_kvalue> ik(k);
-    thrust::transform(thrust::device.on(stream), kmers_d.begin(), kmers_d.end(), ik, kmers_d.begin(), canonicalkmer());
-    // 2. sort: [ABCBBAC] -> [AABBBCC] (kmers_d) (~5-15% time)
-    #ifdef TIMER
-    wcts[1] = wct1.stop();
-    WallClockTimer wct2;
-    #endif
-    thrust::sort(thrust::device.on(stream), kmers_d.begin(), kmers_d.end()/*, thrust::greater<T_kmer>()*/);
-    skms_store.clear_skm_data();
-    // thrust::host_vector<T_kmer> sorted_kmers_h = kmers_d;
-    
-    // 3. find changes: [AABBBCC] -> [0,1,0,1,1,0,1] (same_flag_d)
-    #ifdef TIMER
-    wcts[2] = wct2.stop();
-    WallClockTimer wct3;
-    #endif
-    thrust::device_vector<bool> same_flag_d(kmers_d.size());
-    thrust::transform(thrust::device.on(stream), kmers_d.begin()+1 /*x beg*/, kmers_d.end() /*x end*/, kmers_d.begin()/*y beg*/, same_flag_d.begin()+1/*res beg*/, sameasprev());
-    same_flag_d[0] = 0; //
-    
-    // 4. remove same idx: [0123456] [0101101] -> [0,2,5] (idx_d)
-    #ifdef TIMER
-    wcts[3] = wct3.stop();
-    WallClockTimer wct4;
-    #endif
-    thrust::device_vector<T_read_len> idx_d(kmers_d.size());
-    thrust::sequence(thrust::device.on(stream), idx_d.begin(), idx_d.end());
-    auto new_end_idx_d = thrust::remove_if(thrust::device.on(stream), idx_d.begin(), idx_d.end(), same_flag_d.begin(), thrust::identity<bool>()); // new_end_idx_d is an iterator
-    
-    // 4+. copy sorted kmers back to host
-    // thrust::host_vector<T_kmer> sorted_kmers_h = kmers_d;
-    auto new_end_sorted_cleared_kmers_d = thrust::remove_if(thrust::device.on(stream), kmers_d.begin(), kmers_d.end(), same_flag_d.begin(), thrust::identity<bool>()); // new_end_idx_d is an iterator
-    thrust::host_vector<T_kmer> sorted_kmers_h(kmers_d.begin(), new_end_sorted_cleared_kmers_d);
-    volatile T_kmer tmp_kmer = sorted_kmers_h[0];
-    
-    // 5. copy device_vector back to host_vector
-    #ifdef TIMER
-    wcts[4] = wct4.stop();
-    WallClockTimer wct5;
-    #endif
-    thrust::host_vector<T_read_len> idx_h(idx_d.begin(), new_end_idx_d);
-    idx_h.push_back(tot_kmers); // [0,2,5] -> [0,2,5,7] A2 B3 C2
-    
-    #ifdef TIMER
-    wcts[5] = wct5.stop();
-    WallClockTimer wct6;
-    #endif
-    size_t total_kmer_cnt = 0;
-    int i;
-    T_kmer_cnt cnt;
-    for(i=0; i<idx_h.size()-1; i++) {
-        cnt = idx_h[i+1]-idx_h[i] > MAX_KMER_CNT ? MAX_KMER_CNT : idx_h[i+1]-idx_h[i];
-        total_kmer_cnt += idx_h[i+1]-idx_h[i];
-        // Add kmer-cnt to result vector:
-        // if (cnt >= kmer_min_freq && cnt <= kmer_max_freq) {
-        //     kmc_result_curthread.push_back({sorted_kmers_h[idx_h[i]], cnt});
-        //     kmc_result_curthread.push_back({sorted_kmers_h[i], cnt});
-        // }
-    }
-    assert(total_kmer_cnt == skms_store.kmer_cnt);
-    #ifdef TIMER
-    wcts[6] = wct6.stop();
-    cout<<wcts[0]<<"\t"<<wcts[1]<<"\t"<<wcts[2]<<"\t"<<wcts[3]<<"\t"<<wcts[4]<<"\t"<<wcts[5]<<"\t"<<wcts[6]<<endl;
-    #endif
-    delete &skms_store;//
-    return idx_h.size()-1; // total distinct kmer
-    // return total_kmer_cnt; // total kmer
-}
-
 __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
                                vector<SKMStoreNoncon*> skms_stores, CUDAParams &gpars,
                                unsigned short kmer_min_freq, unsigned short kmer_max_freq,
@@ -473,8 +282,8 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             // ---- 0. Extract kmers from SKMStore: ---- 
             kmers_d_vec[i] = thrust::device_vector<T_kmer>(skms_stores[i]->kmer_cnt);
             T_kmer *d_kmers_data = thrust::raw_pointer_cast(kmers_d_vec[i].data());
-            if (GPU_compression) Extract_Kmers_Compressed(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG, gpars.TpB, gpuid);
-            else Extract_Kmers(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG, gpars.TpB);
+            // if (GPU_compression) Extract_Kmers_Compressed(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG, gpars.TpB, gpuid);
+            /*else*/ Extract_Kmers(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG, gpars.TpB);
             tot_kmers[i] = kmers_d_vec[i].size();
         }
     }

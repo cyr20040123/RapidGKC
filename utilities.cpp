@@ -83,7 +83,6 @@ void GlobalParams::ArgParser(int argc, char* argvs[]) {
         else if (!strcmp(argvs[i], "-ns1")) n_streams = atoi(argvs[++i]);
         else if (!strcmp(argvs[i], "-ns2")) n_streams_phase2 = atoi(argvs[++i]);
         else if (!strcmp(argvs[i], "-rps")) reads_per_stream_mul = atoi(argvs[++i]);
-        else if (!strcmp(argvs[i], "-gc")) GPU_compression = true;
         else if (!strcmp(argvs[i], "-read")) {
             int j;
             for (j=i+1; j<argc; j++, i++) {
@@ -105,10 +104,5 @@ void GlobalParams::ArgParser(int argc, char* argvs[]) {
         tmp_file_folder.push_back('/');
     if (*log_file_folder.rbegin() != '/')
         log_file_folder.push_back('/');
-    if (to_file) {
-        if (GPU_compression)
-            cerr<<"Warning: wrong set: GPU_compression can only be turned on when in-memory counting (GPU_compression now off)."<<endl;
-        GPU_compression = false;
-    }
 }
 

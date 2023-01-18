@@ -111,41 +111,14 @@ public:
     /// @param kmer_cnt number of kmers of each partition
     /// @param skmpart_offs offset of each skm partition
     /// @param skm_store_csr skm partitions in csr format
-    /// @param skmpart_compressed_bytes compressed size in bytes of each skm partition
-    static void save_batch_skms (vector<SKMStoreNoncon*> &skms_stores, T_skm_partsize *skm_cnt, T_skm_partsize *kmer_cnt, T_CSR_cap *skmpart_offs, byte *skm_store_csr, size_t *skmpart_compressed_bytes = nullptr) {
+    static void save_batch_skms (vector<SKMStoreNoncon*> &skms_stores, T_skm_partsize *skm_cnt, T_skm_partsize *kmer_cnt, T_CSR_cap *skmpart_offs, byte *skm_store_csr) {
         // memory layout of skm_store_csr:
         // [<part0><part1><part2><...>]
         int i;
         int SKM_partitions = skms_stores.size();
-        if (skmpart_compressed_bytes == nullptr) {
-            for (i=0; i<SKM_partitions; i++)
-                skms_stores[i]->add_skms(&skm_store_csr[skmpart_offs[i]], skmpart_offs[i+1]-skmpart_offs[i], skm_cnt[i], kmer_cnt[i], 0);
-        } else {// for GPU-compressed data, use new size (skmpart_compressed_sizes)
-            for (i=0; i<SKM_partitions; i++)
-                skms_stores[i]->add_skms(&skm_store_csr[skmpart_offs[i]], skmpart_offs[i+1]-skmpart_offs[i], skm_cnt[i], kmer_cnt[i], skmpart_compressed_bytes[i]);
-        }
+        for (i=0; i<SKM_partitions; i++)
+            skms_stores[i]->add_skms(&skm_store_csr[skmpart_offs[i]], skmpart_offs[i+1]-skmpart_offs[i], skm_cnt[i], kmer_cnt[i], 0);
         if (skms_stores[0]->to_file) delete skm_store_csr;//
-    }
-
-    // for compressed skms saving
-    static void save_batch_skms (vector<SKMStoreNoncon*> &skms_stores, T_skm_partsize *skm_cnt, T_skm_partsize *kmer_cnt, byte **skm_data, size_t *skmpart_uncompressed_bytes, size_t *skmpart_compressed_bytes = nullptr) {
-        int i;
-        int SKM_partitions = skms_stores.size();
-        if (skmpart_compressed_bytes == nullptr) {
-            for (i=0; i<SKM_partitions; i++) {
-                skms_stores[i]->add_skms(skm_data[i], skmpart_uncompressed_bytes[i], skm_cnt[i], kmer_cnt[i], 0);
-                skms_stores[i]->dl_mtx.lock();
-                skms_stores[i]->delete_list.push_back(skm_data[i]);
-                skms_stores[i]->dl_mtx.unlock();
-            }
-        } else {// for GPU-compressed data, use new size (skmpart_compressed_sizes)
-            for (i=0; i<SKM_partitions; i++) {
-                skms_stores[i]->add_skms(skm_data[i], skmpart_uncompressed_bytes[i], skm_cnt[i], kmer_cnt[i], skmpart_compressed_bytes[i]);
-                skms_stores[i]->dl_mtx.lock();
-                skms_stores[i]->delete_list.push_back(skm_data[i]);
-                skms_stores[i]->dl_mtx.unlock();
-            }
-        }
     }
 };
 

@@ -521,23 +521,6 @@ __host__ void SKM_Compression_COMP (const int SKM_partitions, T_h_data host_data
     }
     
     return;
-    // decompression
-    // std::vector<byte*> decomp_result_buffers(num_buffers);
-    // for(size_t ix_buffer = 0; ix_buffer < num_buffers; ++ix_buffer) {
-    //     byte* comp_data = comp_result_buffers[ix_buffer];
-
-    //     auto decomp_config = nvcomp_manager.configure_decompression(comp_data);
-
-    //     CUDA_CHECK(cudaMalloc(&decomp_result_buffers[ix_buffer], decomp_config.decomp_data_size));
-
-    //     nvcomp_manager.decompress(decomp_result_buffers[ix_buffer], comp_data, decomp_config);    
-    // }
-
-    // for (size_t ix_buffer = 0; ix_buffer < num_buffers; ++ix_buffer) {
-    //     CUDA_CHECK(cudaFree(decomp_result_buffers[ix_buffer]));
-    //     CUDA_CHECK(cudaFree(comp_result_buffers[ix_buffer]));
-    // }
-
 }
 
 __host__ void SKM_Compression_COLLECT (GdeflateManager *nvcomp_managers, std::vector<byte*> &comp_result_buffers, const int SKM_partitions, T_h_data host_data, cudaStream_t stream) {

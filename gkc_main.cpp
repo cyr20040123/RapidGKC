@@ -72,11 +72,12 @@ void GPUKmerCounting_TP(CUDAParams &gpars) {
     WallClockTimer wct1;
     
     for (auto readfile:PAR.read_files) {
+        WallClockTimer wct_tmp;
         ReadLoader::work_while_loading_V2(
             [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){process_reads_count(reads, gpars, skm_part_vec, tid);},
             PAR.RD_threads_min, readfile, PAR.Batch_read_loading, true, PAR.Buffer_fread_size_MB*ReadLoader::MB
         );
-        logger->log("-- ["+readfile+"] processed --\n", Logger::LV_NOTICE);
+        logger->log(to_string(wct_tmp.stop())+"---- ["+readfile+"] processed ----\n", Logger::LV_NOTICE);
     }
     
     double p1_time = wct1.stop();

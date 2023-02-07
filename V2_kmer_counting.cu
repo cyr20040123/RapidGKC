@@ -231,18 +231,21 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kme
     // ---- copy skm chunks H2D ----
     if (skms_store.to_file) d_skms = load_SKM_from_file(skms_store);
     else {
-        CUDA_CHECK(cudaMallocAsync((void**) &(d_skms), skms_store.tot_size_bytes, stream));
+        CUDA_CHECK(cudaMallocAsync((void**) &(d_skms), skms_store.tot_size_bytes+1, stream));
+        // CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes+1));
         int i;
-        byte *d_store_pos = d_skms;
+        // byte *d_store_pos = d_skms;
+        size_t d_store_pos = 0;
         for (i=0; i<skms_store.skm_chunk_bytes.size(); i++) {
-            CUDA_CHECK(cudaMemcpyAsync(d_store_pos, skms_store.skm_chunks[i], skms_store.skm_chunk_bytes[i], cudaMemcpyHostToDevice, stream));
+            CUDA_CHECK(cudaMemcpyAsync(d_skms+d_store_pos, skms_store.skm_chunks[i], skms_store.skm_chunk_bytes[i], cudaMemcpyHostToDevice, stream));
+            CUDA_CHECK(cudaStreamSynchronize(stream)); // 不加这行用CPU step 1会卡死 7.60s(+) vs 7.40s(-)
             d_store_pos += skms_store.skm_chunk_bytes[i];
         }
     }
     // cerr<<"debug2"<<endl;
     // CUDA_CHECK(cudaStreamSynchronize(stream));
     // ---- GPU work ----
-    if (skms_store.tot_size_bytes / 4 <= BpG * TpB) GPU_Extract_Kmers<<<1, skms_store.tot_size_bytes/64+1, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k); // 强行debug
+    if (skms_store.tot_size_bytes / 4 <= BpG * TpB) GPU_Extract_Kmers<<<1, skms_store.tot_size_bytes/64+1, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k); // 强行debug // mountain of shit, do not touch
     else GPU_Extract_Kmers<<<BpG, TpB, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
     // GPU_Extract_Kmers_test<<<BpG, TpB, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
     
@@ -254,10 +257,10 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kme
 __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
                                vector<SKMStoreNoncon*> skms_stores, CUDAParams &gpars,
                                unsigned short kmer_min_freq, unsigned short kmer_max_freq,
-                               _out_ vector<T_kmc> kmc_result_curthread [], int tid,
+                               _out_ vector<T_kmc> kmc_result_curthread [], int gpuid,
                                bool GPU_compression = false) {
     // using CUDA Thrust
-    int gpuid = (gpars.device_id++)%gpars.n_devices;
+    // int gpuid = (gpars.device_id++)%gpars.n_devices;
     CUDA_CHECK(cudaSetDevice(gpuid));
     // V2:
     // if (gpars.gpuid_thread[tid] == -1) {
@@ -297,7 +300,7 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             thrust::transform(thrust::device.on(streams[i]), kmers_d_vec[i].begin(), kmers_d_vec[i].end(), ik, kmers_d_vec[i].begin(), canonicalkmer());
             // ---- 2. sort: [ABCBBAC] -> [AABBBCC] (kmers_d) ---- 
             thrust::sort(thrust::device.on(streams[i]), kmers_d_vec[i].begin(), kmers_d_vec[i].end()/*, thrust::greater<T_kmer>()*/);
-            skms_stores[i]->clear_skm_data(); // only when gpu compression and in-mem
+            // skms_stores[i]->clear_skm_data(); // only when gpu compression and in-mem
             // ---- 3. find changes: [AABBBCC] -> [0,1,0,1,1,0,1] (same_flag_d) ---- 
             same_flag_d_vec[i] = thrust::device_vector<bool>(kmers_d_vec[i].size());
             thrust::transform(thrust::device.on(streams[i]), kmers_d_vec[i].begin()+1 /*x beg*/, kmers_d_vec[i].end() /*x end*/, kmers_d_vec[i].begin()/*y beg*/, same_flag_d_vec[i].begin()+1/*res beg*/, sameasprev());
@@ -346,6 +349,7 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
         return_value += idx_h_vec[i].size()-1;
     }
     for (i=0; i<n_streams; i++) {
+        skms_stores[i]->clear_skm_data();
         delete skms_stores[i];//
     }
     logger->log(logs+" "+to_string(return_value), Logger::LV_DEBUG);

@@ -7,7 +7,7 @@
 #define STR1(R)  #R
 #define STR(R) STR1(R)
 
-#include "gkc_cuda.hpp"
+#include "gkc_cuda.h"
 #include "types.h"
 #include "utilities.hpp"
 #include <cuda.h>
@@ -197,7 +197,7 @@ __device__ __forceinline__ bool new_filter(T_minimizer mm, int p) {
 }
 __device__ __forceinline__ bool new_filter2(T_minimizer mm, int p) {
     // return ((mm >> ((p-3)*2)) != 0) /*AAA*/ & (mm >> ((p-3)*2) != 0b000100) /*ACA*/; //& (mm >> ((p-3)*2) != 0b001000) /*AGA*/;
-    return ((((mm >> ((p-3)*2)) & 0b111011) != 0/*no AAA ACA*/) & ((mm & 0b111111) != 0/*no AAA at last*/)); // TODO: WHY REMOVING "!=0" WILL BE DIFFERENT???
+    return ((((mm >> ((p-3)*2)) & 0b111011) != 0/*no AAA ACA*/) & ((mm & 0b111111) != 0/*no AAA at last*/));
 }
 // KMC2 signature
 __device__ bool sign_filter(T_minimizer mm, int p) {
@@ -324,6 +324,9 @@ __global__ void GPU_GenSKMOffs(
         skm[0] = 0;
         for (i = 1; i <= len-K_kmer; i++) {
             new_skm = (minimizers[i] != minimizers[i-1]/*||i-last_skm_pos+K_kmer >= MAX_SKM_LEN*/);
+            #ifdef DEBUG
+            if (new_skm) printf("%c", _hash_partition(minimizers[i-1], SKM_partitions) == _hash_partition(minimizers[i], SKM_partitions)?'*':'-');
+            #endif
             skm_count += new_skm; // current minimizer != last minimizer, new skm generated
             last_skm_pos = (!new_skm) * last_skm_pos + (new_skm) * i;
             skm[skm_count] = last_skm_pos; // skm #skm_count (begins from 1) ends at last_skm_pos
@@ -430,7 +433,7 @@ __global__ void GPU_ExtractSKM (
     _in_ T_read_cnt d_reads_cnt, _in_ T_read_len *d_read_len, _in_ T_CSR_cap *d_read_offs, _in_ unsigned char *d_reads,
     _in_ T_minimizer *d_minimizers,
     _in_ T_read_len *d_skm_offs_inread,
-    _in_ T_skm_partsize *d_store_pos, _in_ T_skm_partsize *d_skm_cnt, _out_ byte *d_skm_store_csr, _in_ T_CSR_cap *d_skmpart_offs, 
+    _in_ T_skm_partsize *d_store_pos, /*_in_ T_skm_partsize *d_skm_cnt, */_out_ byte *d_skm_store_csr, _in_ T_CSR_cap *d_skmpart_offs, 
     const T_kvalue K_kmer, const T_kvalue P_minimizer, const int SKM_partitions
 ) {
     T_read_len *cur_read_skm_offs;      // skm offs pointer of current read
@@ -500,7 +503,7 @@ __host__ size_t GPUReset(int did) {
 __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
     const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars, CountTask task,
     const int SKM_partitions, vector<SKMStoreNoncon*> skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
-    int tid, bool GPU_compression
+    int tid
     /*atomic<size_t> skm_part_sizes[]*/) {
     
     int time_all=0, time_filter=0;
@@ -655,7 +658,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             GPU_ExtractSKM<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>> (
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_len, gpu_data[i].d_read_offs, gpu_data[i].d_reads,
                 gpu_data[i].d_minimizers, gpu_data[i].d_superkmer_offs, 
-                gpu_data[i].d_store_pos, gpu_data[i].d_skm_cnt, gpu_data[i].d_skm_store_csr, gpu_data[i].d_skmpart_offs,
+                gpu_data[i].d_store_pos, /*gpu_data[i].d_skm_cnt, */gpu_data[i].d_skm_store_csr, gpu_data[i].d_skmpart_offs,
                 K_kmer, P_minimizer, SKM_partitions
             );
             // -- Malloc on host for SKM storage --
@@ -708,7 +711,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             delete [] host_data[i].skm_cnt;//2
             delete [] host_data[i].kmer_cnt;//3
             delete [] host_data[i].skmpart_offs;//
-            // if (write to file) delete [] host_data[i].skm_store_csr;// deleted in SKMStore
+            // if (write to file) delete [] host_data[i].skm_store_csr;// will not be deleted until program ends
         }
     }
     logger->log(logs);

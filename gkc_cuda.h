@@ -15,6 +15,7 @@ while((call) != cudaSuccess) { \
     this_thread::sleep_for(100ms); \
 }
 
+#include "utilities.hpp"
 #include "types.h"
 #include "V2_superkmers.hpp"
 #include <vector>
@@ -53,7 +54,7 @@ size_t GPUReset (int did);
 void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
     const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars, CountTask task,
     const int SKM_partitions, vector<SKMStoreNoncon*> skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
-    int tid, bool GPU_compression
+    int tid
     /*atomic<size_t> skm_part_sizes[]*/);
 
 #endif

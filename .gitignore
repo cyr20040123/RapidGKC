@@ -9,7 +9,7 @@
 *.bin.*
 test.*
 bin.cpp
-*test
+*test*
 *.test.*
 tmp/*
 *.tmp.*

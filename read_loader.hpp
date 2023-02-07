@@ -1,5 +1,3 @@
-#define DEBUG
-
 #ifndef _READ_LOADER_HPP
 #define _READ_LOADER_HPP
 
@@ -14,9 +12,7 @@
 #include <sys/stat.h>   // for getting file size
 #include "types.h"
 #include "thread_pool.hpp"
-#ifdef DEBUG
 #include <cassert>
-#endif
 using namespace std;
 
 #ifdef DEBUG
@@ -99,9 +95,11 @@ private:
         }
         // ---- Process _buf_cur ----
         lock_guard<mutex> lg(_threadreads_mtx[tid]);
+        #ifdef DEBUG
         assert(buf[0] == '@'); // TODO: 不用判断.
+        #endif
         // if (buf[0] != '@') { 
-        //     cerr << tid << " Error: wrong file format (not fastq). " << string(buf.begin(), buf.begin()+20) << endl;
+        //     std::cerr << tid << " Error: wrong file format (not fastq). " << string(buf.begin(), buf.begin()+20) << endl;
         //     exit(1);
         // }
         size_t i = 0, j;
@@ -112,7 +110,7 @@ private:
                 j = buf.find('\n', i+1); // line end of read
                 if (buf[j-1] == '\r') j--;
                 #ifdef DEBUG
-                if (j >= remain_pos) {cerr<<"unexpected end"<<endl; break;}
+                if (j >= remain_pos) {std::cerr<<"unexpected end"<<endl; break;}
                 checksum += *(buf.begin()+i+1) + *(buf.begin()+j) + (j-i+1);
                 #endif
                 _thread_reads[tid].push_back(new string(buf.begin()+i+1, buf.begin()+j));// deleted in delete_read_buffers
@@ -164,9 +162,11 @@ private:
 
         // ---- Process _buf_cur ----
         lock_guard<mutex> lg(_threadreads_mtx[tid]);
+        #ifdef DEBUG
         assert(buf[0] == '>');
+        #endif
         // if (buf[0] != '>') { // TODO: 不用判断.
-        //     cerr << tid << " Error: wrong file format (not fasta). " << buf[0] << endl;
+        //     std::cerr << tid << " Error: wrong file format (not fasta). " << buf[0] << endl;
         //     exit(1);
         // }
         size_t i = 0, j;
@@ -177,10 +177,10 @@ private:
                 if (j == string::npos && last_batch) j = buf.length(); // avoid no newline at last
                 else if (buf[j-1] == '\r') j--;
                 #ifdef DEBUG
-                // if (j > remain_pos) {cerr<<"unexpected end"<<last_batch<<endl; break;}
+                // if (j > remain_pos) {std::cerr<<"unexpected end"<<last_batch<<endl; break;}
                 // if (last_batch) {
-                //     cerr<<string(buf.begin(), buf.begin()+5)<<" "<<j<<" "<<string(buf.begin()+i+1, buf.begin()+i+10)<<endl;
-                //     cerr<<j<<" "<<remain_pos<<endl;
+                //     std::cerr<<string(buf.begin(), buf.begin()+5)<<" "<<j<<" "<<string(buf.begin()+i+1, buf.begin()+i+10)<<endl;
+                //     std::cerr<<j<<" "<<remain_pos<<endl;
                 // }
                 checksum += *(buf.begin()+i+1) + *(buf.begin()+j) + (j-i+1);
                 #endif
@@ -233,7 +233,7 @@ public:
             CUR_BUF_SIZE = max (LINE_BUF_SIZE, (file_size + 1*KB) / n_threads);
         else
             CUR_BUF_SIZE = buffer_size; // buf_size 过小4MB(bug) 16MB(no bug) on 8858432也会出bug。。。
-        cerr << "CUR_BUF_SIZE = " << CUR_BUF_SIZE / MB << "MB \tloading threads = " << n_threads << endl;
+        std::cerr << "CUR_BUF_SIZE = " << CUR_BUF_SIZE / MB << "MB \tloading threads = " << n_threads << endl;
 
         _pbuf_mtxs[0].unlock(); // unlock only when _buf_prev_remain is prepared
         for (i=0; i<n_threads; i++) {
@@ -272,7 +272,7 @@ public:
         // Open file:
         FILE *readfile = fopen(_filename.c_str(), "rb");
         if (readfile == NULL) {
-            cerr << "Unable to open: " << _filename << endl;
+            std::cerr << "Unable to open: " << _filename << endl;
             exit(1);
         }
 
@@ -280,12 +280,12 @@ public:
         bool fastq = *(_filename.rbegin()) == 'q';
         std::function<T_read_cnt(int,bool)> proc_func;
         if (fastq) {
-            cerr << "fastq" << endl;
+            std::cerr << "fastq" << endl;
             proc_func = [this](int tid, bool last_bat) -> T_read_cnt {return this->_load_fastq(tid, last_bat);}; // [this] pass by value
             // proc_func = [this](int tid, bool last_bat) -> T_read_cnt {return this->_load_fastq_bw(tid, last_bat);}; // [this] pass by value
             // proc_func = std::bind(&ReadLoader::_load_fastq, this, placeholders::_1);
         } else {
-            cerr << "fasta" << endl;
+            std::cerr << "fasta" << endl;
             proc_func = [this](int tid, bool last_bat) -> T_read_cnt {return this->_load_fasta(tid, last_bat);}; // [&this] pass by ref
         }
 
@@ -302,7 +302,7 @@ public:
             not_1st_loop |= i==0;
             if (not_1st_loop) {
                 read_cnt += _proc_res[i].get(); // wait for the previous round
-                // cerr<<"LOADED "<<read_cnt<<" CONSUMED "<<reads_consumed<<" BATCH "<<batch_size<<endl;
+                // std::cerr<<"LOADED "<<read_cnt<<" CONSUMED "<<reads_consumed<<" BATCH "<<batch_size<<endl;
                 while (read_cnt - reads_consumed > 2 * batch_size) this_thread::sleep_for(1ms);
             }
         }
@@ -316,13 +316,13 @@ public:
                 read_cnt += _proc_res[i].get(); // wait for the previous round
         }
         read_cnt += proc_func(i_break, true); // process the data in the last pbuf
-        cerr<<"File closed: "<<fclose(readfile)<<endl;
+        std::cerr<<"File closed: "<<fclose(readfile)<<endl;
     }
 
     size_t get_file_size(const char *filename) {
         struct stat statbuf;
         if (stat(filename, &statbuf) != 0) {
-            cerr<<"ERROR "<<errno<<": can't get file size of "<<filename;
+            std::cerr<<"ERROR "<<errno<<": can't get file size of "<<filename;
             perror("");
             exit(errno);
         }
@@ -360,7 +360,7 @@ public:
                     }
                 }
                 n += _thread_bat_split_pos[i][bat] - _thread_bat_split_pos[i][bat-1];
-                // cerr<<"load tid="<<i<<" pos="<<_thread_bat_split_pos[i][bat-1]<<"~"<<_thread_bat_split_pos[i][bat]<<endl;
+                // std::cerr<<"load tid="<<i<<" pos="<<_thread_bat_split_pos[i][bat-1]<<"~"<<_thread_bat_split_pos[i][bat]<<endl;
             }
         }
         reads_consumed += n-beg;
@@ -394,7 +394,7 @@ public:
                         }
                 }
                 n += _thread_bat_split_pos[i][bat] - _thread_bat_split_pos[i][bat-1];
-                // cerr<<n_reads<<" delete tid="<<i<<" pos="<<_thread_bat_split_pos[i][bat-1]<<"~"<<_thread_bat_split_pos[i][bat]<<endl;
+                // std::cerr<<n_reads<<" delete tid="<<i<<" pos="<<_thread_bat_split_pos[i][bat-1]<<"~"<<_thread_bat_split_pos[i][bat]<<endl;
             }
         }
         _unlock_thread_reads();
@@ -402,10 +402,10 @@ public:
     }
     
 
-    static void work_while_loading_V2 (std::function<void(vector<ReadPtr>&, int)> work_func, int loader_threads, string filename, 
+    static void work_while_loading_V2 (std::function<void(vector<ReadPtr>&, int)> work_func, int loader_threads, int worker_threads, string filename, 
         T_read_cnt batch_size=5000, bool delete_after_proc=false, size_t buffer_size = 20 * ReadLoader::MB)
     {
-        ThreadPool<void> tp(PAR.N_threads);
+        ThreadPool<void> tp(worker_threads);
         
         vector<ReadPtr> *reads;
         ReadLoader rl(loader_threads, filename, batch_size, buffer_size);
@@ -452,7 +452,7 @@ public:
         }
         // if (file_loading_t.joinable()) file_loading_t.join();
         tp.finish();
-        cerr<<"Total reads loaded: "<<n_read_loaded<<endl;
+        std::cerr<<"Total reads loaded: "<<n_read_loaded<<endl;
         return;
     }
 };

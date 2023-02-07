@@ -7,10 +7,8 @@
 #include "types.h"
 #include "utilities.hpp"
 #include <iostream>
-#define DEBUG
-#ifdef DEBUG
+// #define DEBUG
 #include <cassert>
-#endif
 using namespace std;
 
 class SKMStoreNoncon {
@@ -119,6 +117,43 @@ public:
         for (i=0; i<SKM_partitions; i++)
             skms_stores[i]->add_skms(&skm_store_csr[skmpart_offs[i]], skmpart_offs[i+1]-skmpart_offs[i], skm_cnt[i], kmer_cnt[i], 0);
         if (skms_stores[0]->to_file) delete skm_store_csr;//
+    }
+
+    /**
+     * Will take over the control of skm_data (no need to delete outside).
+     * @param  {SKMStoreNoncon*} skms_store : 
+     * @param  {T_skm_partsize} skm_cnt     : 
+     * @param  {T_skm_partsize} kmer_cnt    : 
+     * @param  {byte*} skm_data             : Will be deleted if <skm_to_file> is enabled.
+     * @param  {size_t} data_bytes          : 
+     * @param  {int} buf_size               : 
+     */
+    static void save_skms (SKMStoreNoncon* skms_store, T_skm_partsize skm_cnt, T_skm_partsize kmer_cnt, byte *skm_data, size_t data_bytes, const int buf_size = 0) {
+        if (data_bytes == 0) {
+            delete [] skm_data;
+            return;
+        }
+        byte *tmp;
+        if (true || data_bytes < buf_size / 4 * 3) {
+            tmp = new byte [data_bytes];
+            memcpy(tmp, skm_data, data_bytes);
+            skms_store->add_skms(tmp, data_bytes, skm_cnt, kmer_cnt);
+            delete [] skm_data;
+            if (skms_store->to_file) delete tmp;
+            else {
+                skms_store->dl_mtx.lock();
+                skms_store->delete_list.push_back(tmp);
+                skms_store->dl_mtx.unlock();
+            }
+        } else {
+            skms_store->add_skms(skm_data, data_bytes, skm_cnt, kmer_cnt);
+            if (skms_store->to_file) delete [] skm_data;
+            else {
+                skms_store->dl_mtx.lock();
+                skms_store->delete_list.push_back(skm_data);
+                skms_store->dl_mtx.unlock();
+            }
+        }
     }
 };
 

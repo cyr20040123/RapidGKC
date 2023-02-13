@@ -31,7 +31,9 @@ typedef unsigned long long T_kmer;
 #endif
 #ifdef LONGERKMER
 typedef unsigned __int128 T_kmer;
+// T_kmer TKMAX = 0xffffffffffffffffffffffffffffffff;
 #endif
+const T_kmer TKMAX = (T_kmer)(-1);
 
 typedef unsigned char byte;
 const int BYTE_BASES = 3;

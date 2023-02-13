@@ -1,7 +1,9 @@
 #include "cpu_funcs.h"
 #include "utilities.hpp"
 #include <cstring>
+#include <algorithm>
 
+using namespace std;
 // #define TEST
 
 const unsigned char basemap[256] = {
@@ -284,6 +286,232 @@ void GenSuperkmerCPU (vector<ReadPtr> &reads,
     logger->log("---- BATCH\tCPU:\t#Reads "+to_string(reads.size())+" ----");
     #endif
 }
+
+/**
+ * Phase 2: bucket (MSD radix + quick) sort for counting
+*/
+int _get_histogram (T_kmer *kmers, T_skm_partsize n_kmers, int right_shift, const T_kmer base_mask, const int NB, _out_ size_t *offs, bool _debug_output = false) {
+    right_shift = right_shift > 0 ? right_shift : 0;
+    // complexity: n+NB
+    size_t i;
+    for (i=0; i<n_kmers; i++)
+        offs[((kmers[i] >> right_shift) & base_mask) + 1]++;
+    // if (_debug_output) {
+    //     for (i=0; i<NB; i++) cout<<offs[i]/100<<"\t";
+    //     cout<<endl;
+    // }
+    int occupied_bins = 0;
+    for (i=0; i<NB; i++) {
+        occupied_bins += offs[i+1]>0;
+        offs[i+1] += offs[i];
+    }
+    return occupied_bins; // 如果occupied_bins小于一定数值，或者当前区域kmer数量小于比如10000，用qsort。
+}
+void _inplace_reorder (_out_ T_kmer *kmers, T_skm_partsize n_kmers, int right_shift, const T_kmer base_mask, const int NB, size_t *offs) {
+    right_shift = right_shift > 0 ? right_shift : 0;
+    // complexity: n
+    size_t processed[NB];
+    memset(processed, 0, sizeof(size_t)*NB);
+    int bin, target_bin;
+    size_t i = 0;
+    T_kmer tmp;
+    for (bin = 0; bin < NB; bin ++) {
+        i += processed[bin];
+        while (i < offs[bin+1]) {
+            target_bin = (kmers[i] >> right_shift) & base_mask;
+            assert(target_bin < NB);
+            if (target_bin > bin) {
+                // swap i offs[loc]+processed[loc]
+                tmp = kmers[offs[target_bin]+processed[target_bin]];
+                kmers[offs[target_bin]+processed[target_bin]] = kmers[i];
+                kmers[i] = tmp;
+                processed[target_bin] ++;
+            } else {
+                processed[bin] ++; // no need
+                i ++;
+            }
+        }
+    }
+}
+void _reorder (_out_ T_kmer *kmers, T_skm_partsize n_kmers, int right_shift, const T_kmer base_mask, const int NB, size_t *offs) {
+    right_shift = right_shift > 0 ? right_shift : 0;
+    T_kmer *swap = new T_kmer [n_kmers];
+    memcpy(swap, kmers, n_kmers * sizeof(T_kmer));
+
+    size_t i = 0;
+    T_kmer tmp;
+    int target_bin;
+    size_t pos[NB];
+    memset(pos, 0, sizeof(pos[0]) * NB);
+    for (i=0; i<n_kmers; i++) {
+        target_bin = (swap[i] >> right_shift) & base_mask;
+        kmers[offs[target_bin]+pos[target_bin]] = swap[i];
+        pos[target_bin]++;
+    }
+    delete [] swap;
+}
+void sort_kmers (T_kmer *kmers, const T_skm_partsize n_kmers, const T_kvalue K_kmer, int i_base = 0) {
+    if (i_base >= K_kmer) return;
+    if (n_kmers < 4096) {
+        std::sort(kmers, kmers+n_kmers);
+        return;
+    }
+    
+    // radix sort:
+    const int BP_NBASE = 5;
+    int NB = 1 << (BP_NBASE*2); // 4 ^ BP_NBASE = NB
+    T_kmer base_mask = (1 << (BP_NBASE*2)) - 1;
+    int bin;
+
+    size_t offs[NB+1];
+    memset(offs, 0, sizeof(size_t)*(NB+1));
+
+    int occupied_bins = _get_histogram(kmers, n_kmers, (K_kmer-i_base-BP_NBASE)*2, base_mask, NB, offs, i_base==0);
+    // if (n_kmers >= 67108864) // 0x4000000, 512M for ull kmer, 1G for 128bit kmer, basically only the first round will call _inplace_reorder
+    if (false)
+        _inplace_reorder (kmers, n_kmers, (K_kmer-i_base-BP_NBASE)*2, base_mask, NB, offs);
+    else // will malloc n_kmers*sizeof(T_kmer) tmp space for swapping
+        _reorder (kmers, n_kmers, (K_kmer-i_base-BP_NBASE)*2, base_mask, NB, offs);
+
+    for (bin = 0; bin < NB; bin ++) {
+        sort_kmers (kmers+offs[bin], offs[bin+1]-offs[bin], K_kmer, i_base+BP_NBASE);
+    }
+    return;
+}
+inline T_kmer _gen_rc_kmer (T_kmer kmer, T_kvalue k) {
+    T_kvalue i;
+    T_kmer rc_kmer = 0;
+    kmer = ~kmer;
+    for (i = 0; i < k; i++) {
+        rc_kmer = (rc_kmer<<2) | (kmer & 0b11);
+        kmer >>= 2;
+    }
+    return rc_kmer;
+}
+void _extract_kmers_cpu (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* kmers) {
+    // load skms
+    byte* skms;
+    skms = new byte[skms_store.tot_size_bytes];//
+    size_t i;
+    if (skms_store.to_file) {
+        FILE* fp;
+        fp = fopen(skms_store.filename.c_str(), "rb");
+        assert(fp);
+        assert(fread(skms, 1, skms_store.tot_size_bytes, fp)==skms_store.tot_size_bytes);
+        fclose(fp);
+    }
+    else {
+        size_t skm_store_pos = 0;
+        for (i=0; i<skms_store.skm_chunk_bytes.size(); i++) {
+            memcpy(skms+skm_store_pos, skms_store.skm_chunks[i], skms_store.skm_chunk_bytes[i]);
+            skm_store_pos += skms_store.skm_chunk_bytes[i];
+        }
+        assert(skms_store.tot_size_bytes == skm_store_pos);
+    }
+    // extract kmers
+    size_t kmer_store_pos = 0;
+    T_kmer kmer, rc_kmer;
+    T_kmer kmer_mask = (T_kmer)(TKMAX>>(sizeof(T_kmer)*8-k*2));
+    bool new_kmer_required = true;
+    byte j; // = 0,1,2
+    byte indicator, tmp;
+    byte selector[4] = {0, 0b00000011, 0b00001111, 0b00111111};
+    
+    for (i=0, j=0; i<skms_store.tot_size_bytes;) { // i: index of byte, j: which base (0,1,2) in the current byte
+        if (new_kmer_required) {
+            // generate the first (k-1)-mer in the skm
+            kmer = 0;
+            indicator = skms[i] >> 6; // indicator
+            T_kvalue len = indicator;
+            kmer |= skms[i] & selector[indicator]; // e.g., skms[i] & 0b1111
+            i++;
+            while (len <= k-3) {
+                kmer <<= 6; // for 3 bases
+                kmer |= skms[i] & 0b111111;
+                i++;
+                len+=3;
+            }
+            j = k-len-1; // -1 is okay
+            kmer <<= (k-len)*2;
+            kmer |= (skms[i] >> ((3-(k-len))*2)) & selector[k-len];
+            rc_kmer = _gen_rc_kmer(kmer, k);
+            kmers[kmer_store_pos++] = min(kmer, rc_kmer);
+            // cerr<<" "<<kmer<<endl;
+            new_kmer_required = false;
+        } else if (j < skms[i]>>6) {
+            kmer = (kmer << 2) & kmer_mask;
+            tmp = (skms[i] >> (2-j)*2);
+            kmer |= tmp & 0b11;
+            rc_kmer >>= 2;
+            rc_kmer |= (T_kmer((~tmp) & 0b11)) << (2*k-2);
+            kmers[kmer_store_pos++] = min(kmer, rc_kmer);
+            // cerr<<" "<<kmer<<endl;
+        }
+        
+        j++;
+        if (j >= skms[i]>>6) { // overflow
+            if (j!=3) new_kmer_required = true;
+            j=0, i++;
+        }
+    }
+    delete [] skms;//
+    // cerr<<skms_store.id<<" "<<kmer_store_pos<<" "<<skms_store.skm_cnt<<" "<<skms_store.tot_size_bytes<<"|"<<skms_store.kmer_cnt<<endl;
+    assert(kmer_store_pos == skms_store.kmer_cnt);
+    return;
+}
+size_t KmerCountingCPU(T_kvalue k,
+    SKMStoreNoncon *skms_store,
+    T_kmer_cnt kmer_min_freq, T_kmer_cnt kmer_max_freq,
+    _out_ vector<T_kmc> &kmc_result_curpart) {
+    
+    if (skms_store->kmer_cnt == 0) return 0;
+    
+    T_kmer *kmers = new T_kmer[skms_store->kmer_cnt];//
+    WallClockTimer wct_e;
+    _extract_kmers_cpu(*skms_store, k, kmers); // 12%
+    double t1= wct_e.stop();
+    WallClockTimer wct_s;
+    sort_kmers(kmers, skms_store->kmer_cnt, k); // 88%
+    // sort(kmers, kmers+skms_store->kmer_cnt);
+    double t2= wct_s.stop();
+    cerr<<t1<<" <> "<<t2<<endl;
+
+    size_t i, cur_cnt = 1;
+    T_kmer cur_kmer = kmers[0];
+    size_t distinct_kmers = 1;
+    size_t validation_cnt = 0;
+
+    // string outfile = "/mnt/f/study/bio_dataset/tmp/" + to_string(skms_store->id) + ".txt";
+    // FILE *fp = fopen(outfile.c_str(), "w");
+
+    for (i=1; i<skms_store->kmer_cnt; i++) {
+        if (kmers[i] != kmers[i-1]) {
+            distinct_kmers++;
+            // [SAVE] cur_kmer: cur_cnt
+            // cerr<<cur_kmer<<": "<<cur_cnt<<endl;
+            // if (cur_cnt>1) fprintf(fp, "%llu %llu\n", cur_kmer, cur_cnt);
+            validation_cnt += cur_cnt;
+            cur_cnt = 0;
+            cur_kmer = kmers[i];
+        }
+        cur_cnt++;
+    }
+    // [SAVE] cur_kmer: cur_cnt
+    // cerr<<cur_kmer<<": "<<cur_cnt<<endl;
+    // fprintf(fp, "%llu %llu\n", cur_kmer, cur_cnt);
+    // fclose(fp);
+    validation_cnt += cur_cnt;
+    cerr<<validation_cnt<<" == "<<skms_store->kmer_cnt<<endl;
+    assert(validation_cnt == skms_store->kmer_cnt);
+    delete [] kmers;//
+    skms_store->clear_skm_data();
+    delete skms_store;//
+
+    logger->log("CPU: \tPart "+to_string(skms_store->id)+" "+to_string(skms_store->tot_size_bytes)+"|"+to_string(skms_store->kmer_cnt)+" "+to_string(distinct_kmers), Logger::LV_DEBUG);
+
+    return distinct_kmers;
+}
+
 
 #ifdef TEST
 int main() {

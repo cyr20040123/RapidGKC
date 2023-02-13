@@ -134,7 +134,7 @@ public:
             return;
         }
         byte *tmp;
-        if (true || data_bytes < buf_size / 4 * 3) {
+        if (data_bytes < buf_size / 4 * 3) { // TODO: space or time
             tmp = new byte [data_bytes];
             memcpy(tmp, skm_data, data_bytes);
             skms_store->add_skms(tmp, data_bytes, skm_cnt, kmer_cnt);

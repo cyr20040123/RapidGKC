@@ -84,7 +84,7 @@ private:
     }
 public:
     ThreadPool(int n_threads, int busy_thr = -1) {
-        if (busy_thr <= 0) _busy_thr = 2*n_threads;
+        if (busy_thr < 0) _busy_thr = 2*n_threads;
         else _busy_thr = busy_thr;
         _n_threads = n_threads;
         int tid;
@@ -119,6 +119,7 @@ public:
     }
     void finish() {
         _check_finished();
+        hold_when_busy();
         _exit_flag = true;
         _wake_cv.notify_all();
         _holder_cv.notify_all();

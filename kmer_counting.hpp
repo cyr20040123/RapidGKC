@@ -13,7 +13,7 @@ size_t kmc_counting_GPU (T_kvalue k,
 
 size_t kmc_counting_GPU_streams (T_kvalue k,
     vector<SKMStoreNoncon*> skms_stores, CUDAParams &gpars,
-    unsigned short kmer_min_freq, unsigned short kmer_max_freq,
+    T_kmer_cnt kmer_min_freq, T_kmer_cnt kmer_max_freq,
     _out_ vector<T_kmc> kmc_result_curthread [], int gpuid, 
     bool GPU_compression);
 

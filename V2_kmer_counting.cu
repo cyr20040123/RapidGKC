@@ -81,7 +81,8 @@ struct is_zero {
 
 __device__ void _process_bytes (size_t beg, size_t end, byte* d_skms, T_kmer *d_kmers, unsigned long long *d_kmer_store_pos, T_kvalue k) {
     // if called, stop until at least one skm is processed whatever end is exceeded
-    T_kmer kmer_mask = T_kmer(0xffffffffffffffff>>(64-k*2));
+    // T_kmer kmer_mask = T_kmer(0xffffffffffffffff>>(64-k*2));
+    T_kmer kmer_mask = (T_kmer)(((T_kmer)(-1)) >> (sizeof(T_kmer)*8-k*2));
     size_t i;
     T_kmer kmer;
     T_kvalue kmer_bases; // effective bases
@@ -109,7 +110,7 @@ __device__ void _process_bytes (size_t beg, size_t end, byte* d_skms, T_kmer *d_
         }
         store_pos = atomicAdd(d_kmer_store_pos, 1);
         d_kmers[store_pos] = kmer;
-        // printf("%llu\n", kmer);
+        // printf(" %llu\n", kmer);
         
         // generate and store the next kmers
         indicator = (d_skms[i]>>6) & 0b11;
@@ -117,7 +118,7 @@ __device__ void _process_bytes (size_t beg, size_t end, byte* d_skms, T_kmer *d_
             kmer = ((kmer << 2) | ((d_skms[i] >> ((BYTE_BASES-ii-1)*2)) & 0b11)) & kmer_mask;
             store_pos = atomicAdd(d_kmer_store_pos, 1);
             d_kmers[store_pos] = kmer;
-            // printf("%llu\n", kmer);
+            // printf(" %llu\n", kmer);
             ii = (ii+1) % BYTE_BASES;
             i += (ii == 0);
             indicator = (d_skms[i]>>6) & 0b11;
@@ -256,7 +257,7 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kme
 
 __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
                                vector<SKMStoreNoncon*> skms_stores, CUDAParams &gpars,
-                               unsigned short kmer_min_freq, unsigned short kmer_max_freq,
+                               T_kmer_cnt kmer_min_freq, T_kmer_cnt kmer_max_freq,
                                _out_ vector<T_kmc> kmc_result_curthread [], int gpuid,
                                bool GPU_compression = false) {
     // using CUDA Thrust
@@ -328,8 +329,11 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
         }
     }
     
-    // validation:
+    // validation and export result:
     for (i=0; i<n_streams; i++) {
+        // string outfile = "/mnt/f/study/bio_dataset/tmp/" + to_string(skms_stores[i]->id) + ".txt";
+        // FILE *fp = fopen(outfile.c_str(), "w");
+
         if (skms_stores[i]->tot_size_bytes == 0) continue;
         size_t total_kmer_cnt = 0;
         T_kmer_cnt cnt;
@@ -341,9 +345,14 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             //     kmc_result_curthread[skms_stores[i]->id].push_back({sorted_kmers_h[idx_h[j]], cnt});
             //     kmc_result_curthread[skms_stores[i]->id].push_back({sorted_kmers_h[j], cnt});
             // }
+            // cerr<<sorted_kmers_h_vec[i][j]<<": "<<idx_h_vec[i][j+1]-idx_h_vec[i][j]<<endl;
+            // if (idx_h_vec[i][j+1]-idx_h_vec[i][j] > 1)
+            //     fprintf(fp, "%llu %llu\n", sorted_kmers_h_vec[i][j], idx_h_vec[i][j+1]-idx_h_vec[i][j]);
         }
         assert(total_kmer_cnt == skms_stores[i]->kmer_cnt);
+        // fclose(fp);
     }
+
     for (i=0; i<n_streams; i++) {
         if (skms_stores[i]->tot_size_bytes == 0) continue;
         return_value += idx_h_vec[i].size()-1;

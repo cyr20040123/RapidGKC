@@ -12,6 +12,7 @@
 #include <fstream>
 // #include <sstream>
 #include <iostream>
+#include <mutex>
 // using namespace std;
 
 // ======================================================
@@ -155,7 +156,7 @@ public:
     T_kvalue K_kmer = 21;   // length of kmer
     T_kvalue P_minimizer = 7;
     int SKM_partitions = 31; // minimizer length and superkmer partitions
-    unsigned short kmer_min_freq = 1, kmer_max_freq = 1000; // count kmer cnt in [min,max] included
+    T_kmer_cnt kmer_min_freq = 1, kmer_max_freq = 1000; // count kmer cnt in [min,max] included
     bool HPC = false;           // homopolymer compression assembly
     bool CPU_only = false;
     int Kmer_filter = 25;       // percentage
@@ -247,6 +248,8 @@ struct CUDAParams {
     int n_devices;
     std::atomic<int> device_id;
     std::vector<size_t> vram;
+    std::vector<size_t> vram_used;
+    std::vector<std::mutex*> vram_mtx;
     // std::vector<int> gpuid_thread;
     std::atomic<int> running_threads_for_gpu;
     int max_threads_per_gpu;

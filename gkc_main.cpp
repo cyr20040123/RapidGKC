@@ -7,8 +7,8 @@
 #include <bits/stdc++.h>
 #include "read_loader.hpp"
 #include "cpu_funcs.h"
-#include "gkc_cuda.h"
-#include "kmer_counting.hpp"
+#include "gpu_skmgen.h"
+#include "gpu_kmercounting.h"
 #include "thread_pool.hpp"
 using namespace std;
 
@@ -45,12 +45,12 @@ size_t calVarStdev(vector<size_t> &vecNums) // calc avg max min var std cv (Coef
 /// @param gpars 
 /// @param skm_partition_stores 
 void process_reads_count(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMStoreNoncon*> &skm_partition_stores, int tid) {
-    if (true || gpars.running_threads_for_gpu >= gpars.max_threads_per_gpu * gpars.n_devices) {
+    if (true || gpars.gpuworker_threads >= gpars.max_threads_per_gpu * gpars.n_devices) {
         // call CPU splitter
         GenSuperkmerCPU (reads, PAR.K_kmer, PAR.P_minimizer, false, PAR.SKM_partitions, skm_partition_stores);
         return;
     }
-    gpars.running_threads_for_gpu ++;//
+    gpars.gpuworker_threads ++;//
     sort(reads.begin(), reads.end(), sort_comp); // TODO: remove and compare the performance
     PinnedCSR pinned_reads(reads);
     stringstream ss;
@@ -63,17 +63,19 @@ void process_reads_count(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMSt
     //     SKMStoreNoncon::save_batch_skms (skm_partition_stores, hd.skm_cnt, hd.kmer_cnt, hd.skmpart_offs, hd.skm_store_csr, nullptr, true);
     // };
     GenSuperkmerGPU (pinned_reads, PAR.K_kmer, PAR.P_minimizer, false, gpars, CountTask::SKMPartition, PAR.SKM_partitions, skm_partition_stores, tid);
-    gpars.running_threads_for_gpu --;//
+    gpars.gpuworker_threads --;//
 }
 
-void GPUKmerCounting_TP(CUDAParams &gpars) {
+void KmerCounting_TP(CUDAParams &gpars) {
     // GPUReset(gpars.device_id); // must before not after pinned memory allocation
 
     vector<SKMStoreNoncon*> skm_part_vec;
     int i, tid;
     for (i=0; i<PAR.SKM_partitions; i++) skm_part_vec.push_back(new SKMStoreNoncon(i, PAR.to_file));// deleted in kmc_counting_GPU
     
+    // ====================================================
     // ==== 1st phase: loading and generate superkmers ====
+    // ====================================================
     logger->log("**** Phase 1: Loading and generate superkmers ****", Logger::LV_NOTICE);
     WallClockTimer wct1;
     
@@ -108,48 +110,41 @@ void GPUKmerCounting_TP(CUDAParams &gpars) {
     // GPUReset(gpars.device_id);
     // if (PAR.to_file) exit(0);
     
+    // ===========================================================
     // ==== 2nd phase: superkmer extraction and kmer counting ====
+    // ===========================================================
     logger->log("**** Phase 2: Superkmer extraction and kmer counting ****", Logger::LV_NOTICE);
     logger->log("(with "+to_string(PAR.N_threads)+" threads)");
     
     WallClockTimer wct2;
     int n_threads = PAR.N_threads;
-    ThreadPool<size_t> tp(n_threads, 1);
+    ThreadPool<size_t> tp(n_threads, 0);
     
     vector<T_kmc> kmc_result[PAR.SKM_partitions];
     future<size_t> distinct_kmer_cnt[PAR.SKM_partitions];
 
-    // for (i=0; i<PAR.SKM_partitions; i++) {
-    //     distinct_kmer_cnt[i] = tp.commit_task([&skm_part_vec, &gpars, &kmc_result, i] () {
-    //         return kmc_counting_GPU (PAR.K_kmer, *(skm_part_vec[i]), gpars, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[i], PAR.GPU_compression);
-    //     });
-    // }
-    // multi-stream phase 2
-    // V1:
-    // for (i=0; i<PAR.SKM_partitions; i+=gpars.n_streams_phase2) {
-    //     vector<SKMStoreNoncon*> store_vec;
-    //     for (int j=i; j<min(PAR.SKM_partitions, i+gpars.n_streams_phase2); j++) store_vec.push_back(skm_part_vec[j]);
-    //     distinct_kmer_cnt[i] = tp.commit_task([store_vec, &gpars, &kmc_result] () {
-    //         return kmc_counting_GPU_streams (PAR.K_kmer, store_vec, gpars, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result, (gpars.device_id++)%gpars.n_devices, PAR.GPU_compression);
-    //     });
-    // }
     // V2: auto streams
     // todo: available gpu mem = GPU_VRAM // N_THREADS * N_GPUS, required: kmer_cnt * [8|16] * 3;
     int max_streams = min((PAR.SKM_partitions+max(PAR.n_devices, PAR.N_threads)) / max(PAR.n_devices, PAR.N_threads), PAR.n_streams_phase2);
     bool force_cpu = false;
     for (i=0; i<PAR.SKM_partitions; ) {
         tp.hold_when_busy(); // to avoid such: working=[G G C C] queue=<C C C C C ...>
-        if (true || (force_cpu || gpars.running_threads_for_gpu >= gpars.max_threads_per_gpu * gpars.n_devices)) {
+        // call CPU worker:
+        if ((!PAR.GPU_only) && (PAR.CPU_only || force_cpu || gpars.gpuworker_threads >= gpars.max_threads_per_gpu * gpars.n_devices)) { // TODO > or >=
             distinct_kmer_cnt[i] = tp.commit_task([&skm_part_vec, &kmc_result, i] (int tid) {
-                return KmerCountingCPU(PAR.K_kmer, skm_part_vec[i], PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[i]);
+                return KmerCountingCPU(PAR.K_kmer, skm_part_vec[i], PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[i], tid);
             });
             i++;
             force_cpu=false;
             continue;
         }
-        // int gpuid = (gpars.device_id++)%gpars.n_devices;
-        int gpuid = (gpars.device_id++)%gpars.n_devices;
-        int t = i;
+        // select GPU ID based on their running threads:
+        int gpuid; // = (gpars.device_id++)%gpars.n_devices;
+        for (gpuid=0; gpuid<PAR.n_devices; gpuid++)
+            if (*gpars.running_threads_of_gpu[gpuid] < gpars.max_threads_per_gpu) break;
+        gpuid %= gpars.n_devices;
+        int res_store_i = i;
+        // group a batch of skm partitions for GPU:
         long long vram_avail = gpars.vram[gpuid];
         vector<SKMStoreNoncon*> store_vec;
         for (; i<PAR.SKM_partitions; i++) {
@@ -159,14 +154,15 @@ void GPUKmerCounting_TP(CUDAParams &gpars) {
             }
             else break;
         }
-        if (store_vec.size() == 0) {
+        if (store_vec.size() == 0) { // if VRAM is not enough to handle even one partition, use CPU
             logger->log("VRAM NOT ENOUGH @ PART"+to_string(i)+": REQUIRED="+to_string(skm_part_vec[i]->kmer_cnt * sizeof(T_kmer) * 3)+" AVAILABLE="+to_string(gpars.vram[gpuid]), Logger::LV_WARNING);
             force_cpu = true; // force the current skm part counted by cpu
             continue;
         }
         else {
-            distinct_kmer_cnt[t] = tp.commit_task([store_vec, &gpars, &kmc_result, gpuid, vram_avail] (int tid) {
-                gpars.running_threads_for_gpu ++;//
+            gpars.gpuworker_threads ++;// move out from lambda func because tp queue is always empty
+            *(gpars.running_threads_of_gpu[gpuid]) ++;
+            distinct_kmer_cnt[res_store_i] = tp.commit_task([store_vec, &gpars, &kmc_result, gpuid, vram_avail] (int tid) {
                 size_t vram_required = gpars.vram[gpuid] - vram_avail;
                 int vram_check = 1;
                 while (vram_check) {
@@ -179,15 +175,16 @@ void GPUKmerCounting_TP(CUDAParams &gpars) {
                     if (vram_check) {
                         this_thread::sleep_for(100ms);
                         vram_check++;
-                        if (vram_check >= 100 && vram_check % 50 == 0)
-                            logger->log("Out of VRAM, now waiting... GPU:"+to_string(gpuid)+", REQ:"+to_string(vram_required)+" AVAL:"+to_string(gpars.vram[gpuid]-gpars.vram_used[gpuid]), Logger::LV_WARNING);
+                        if (vram_check % 50 == 0)
+                            logger->log("Part "+to_string(store_vec[0]->id)+": Out of VRAM, now waiting... GPU:"+to_string(gpuid)+", REQ:"+to_string(vram_required)+" AVAL:"+to_string(gpars.vram[gpuid]-gpars.vram_used[gpuid]), Logger::LV_WARNING);
                     }
                 }
-                size_t res = kmc_counting_GPU_streams (PAR.K_kmer, store_vec, gpars, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result, gpuid, PAR.GPU_compression);
+                size_t res = kmc_counting_GPU_streams (PAR.K_kmer, store_vec, gpars, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result, gpuid, tid);
                 gpars.vram_mtx[gpuid]->lock();//
                 gpars.vram_used[gpuid] -= vram_required;//
                 gpars.vram_mtx[gpuid]->unlock();//
-                gpars.running_threads_for_gpu --;//
+                gpars.gpuworker_threads --;//
+                *(gpars.running_threads_of_gpu[gpuid]) --;//
                 return res;
             });
         }
@@ -233,7 +230,7 @@ int main (int argc, char** argvs) {
     gpars.TpB = PAR.block_size2;
     gpars.items_stream_mul = PAR.reads_per_stream_mul;
     // for (int i=0; i<PAR.N_threads; i++) gpars.gpuid_thread.push_back(-1);
-    gpars.running_threads_for_gpu = 0;
+    gpars.gpuworker_threads = 0;
     gpars.max_threads_per_gpu = PAR.max_threads_per_gpu;
 
     for (int i=0; i<gpars.n_devices; i++) {
@@ -241,16 +238,18 @@ int main (int argc, char** argvs) {
         gpars.vram_used.push_back(0);
         gpars.vram_mtx.push_back(new mutex());//
         cerr<<"GPU "<<i<<" VRAM "<<*(gpars.vram.rbegin())/1024/1024<<endl;
+        gpars.running_threads_of_gpu.push_back(new atomic<int>(0));
     }
 
     WallClockTimer wct_oa;
     std::cerr<<"----------------------------------------------"<<endl;
-    GPUKmerCounting_TP(gpars);
+    KmerCounting_TP(gpars);
     std::cerr<<"================ PROGRAM ENDS ================"<<endl;
     std::cout<<wct_oa.stop()<<endl;
     
     for (int i=0; i<gpars.n_devices; i++) {
         delete gpars.vram_mtx[i];//
+        delete gpars.running_threads_of_gpu[i];//
     }
     return 0;
 }

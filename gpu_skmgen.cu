@@ -7,7 +7,7 @@
 #define STR1(R)  #R
 #define STR(R) STR1(R)
 
-#include "gkc_cuda.h"
+#include "gpu_skmgen.h"
 #include "types.h"
 #include "utilities.hpp"
 #include <cuda.h>
@@ -304,7 +304,7 @@ __global__ void GPU_GenSKMOffs(
     // reset thread-local skm counter and kmer counter
     // --- V1 ---
     // unsigned short *p_skm_cnt = new unsigned short[SKM_partitions];//   // thread-local: skm cnt of each partition
-    // unsigned short *p_kmer_cnt = new unsigned short[SKM_partitions];//  // thread-local: kmer cnt of each partition // TODO: unsigned short may not be large enough, but unsigned int may overflow when SKM_part > 255
+    // unsigned short *p_kmer_cnt = new unsigned short[SKM_partitions];//  // thread-local: kmer cnt of each partition // unsigned short may not be large enough, but unsigned int may overflow when SKM_part > 255
     // for (i=0; i<SKM_partitions; i++) p_skm_cnt[i] = 0, p_kmer_cnt[i] = 0;
     // --- V1 end ---
     extern __shared__ unsigned int shared_arr[];

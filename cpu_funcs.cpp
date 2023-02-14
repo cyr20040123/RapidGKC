@@ -351,7 +351,7 @@ void _reorder (_out_ T_kmer *kmers, T_skm_partsize n_kmers, int right_shift, con
     delete [] swap;
 }
 void sort_kmers (T_kmer *kmers, const T_skm_partsize n_kmers, const T_kvalue K_kmer, int i_base = 0) {
-    if (i_base >= K_kmer) return;
+    if (i_base >= K_kmer || n_kmers <= 1) return;
     if (n_kmers < 4096) {
         std::sort(kmers, kmers+n_kmers);
         return;
@@ -462,20 +462,21 @@ void _extract_kmers_cpu (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* k
 size_t KmerCountingCPU(T_kvalue k,
     SKMStoreNoncon *skms_store,
     T_kmer_cnt kmer_min_freq, T_kmer_cnt kmer_max_freq,
-    _out_ vector<T_kmc> &kmc_result_curpart) {
+    _out_ vector<T_kmc> &kmc_result_curpart, int tid) {
     
     if (skms_store->kmer_cnt == 0) return 0;
     
+    WallClockTimer wct;
+    
     T_kmer *kmers = new T_kmer[skms_store->kmer_cnt];//
-    WallClockTimer wct_e;
+    // WallClockTimer wct_e;
     _extract_kmers_cpu(*skms_store, k, kmers); // 12%
-    double t1= wct_e.stop();
-    WallClockTimer wct_s;
+    // double t1= wct_e.stop();
+    // WallClockTimer wct_s;
     sort_kmers(kmers, skms_store->kmer_cnt, k); // 88%
     // sort(kmers, kmers+skms_store->kmer_cnt);
-    double t2= wct_s.stop();
-    cerr<<t1<<" <> "<<t2<<endl;
-
+    // double t2= wct_s.stop();
+    
     size_t i, cur_cnt = 1;
     T_kmer cur_kmer = kmers[0];
     size_t distinct_kmers = 1;
@@ -501,13 +502,13 @@ size_t KmerCountingCPU(T_kvalue k,
     // fprintf(fp, "%llu %llu\n", cur_kmer, cur_cnt);
     // fclose(fp);
     validation_cnt += cur_cnt;
-    cerr<<validation_cnt<<" == "<<skms_store->kmer_cnt<<endl;
+    // cerr<<validation_cnt<<" == "<<skms_store->kmer_cnt<<endl;
     assert(validation_cnt == skms_store->kmer_cnt);
     delete [] kmers;//
     skms_store->clear_skm_data();
     delete skms_store;//
 
-    logger->log("CPU: \tPart "+to_string(skms_store->id)+" "+to_string(skms_store->tot_size_bytes)+"|"+to_string(skms_store->kmer_cnt)+" "+to_string(distinct_kmers), Logger::LV_DEBUG);
+    logger->log("CPU  \t(T"+to_string(tid)+"):\tPart "+to_string(skms_store->id)+" "+to_string(skms_store->tot_size_bytes)+"|"+to_string(skms_store->kmer_cnt)+" "+to_string(distinct_kmers)+" \t"+to_string(wct.stop()), Logger::LV_DEBUG);
 
     return distinct_kmers;
 }

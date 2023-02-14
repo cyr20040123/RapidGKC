@@ -35,9 +35,9 @@ if (cuerr.cu_err != CUDA_SUCCESS) { \
 #include <thrust/execution_policy.h>
 
 // #include "types.h"
-// #include "V2_superkmers.hpp"
+// #include "skmstore.hpp"
 // #include <vector>
-#include "kmer_counting.hpp"
+#include "gpu_kmercounting.h"
 #include "utilities.hpp"
 #include <fstream>
 using namespace std;
@@ -258,8 +258,7 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kme
 __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
                                vector<SKMStoreNoncon*> skms_stores, CUDAParams &gpars,
                                T_kmer_cnt kmer_min_freq, T_kmer_cnt kmer_max_freq,
-                               _out_ vector<T_kmc> kmc_result_curthread [], int gpuid,
-                               bool GPU_compression = false) {
+                               _out_ vector<T_kmc> kmc_result_curthread [], int gpuid, int tid) {
     // using CUDA Thrust
     // int gpuid = (gpars.device_id++)%gpars.n_devices;
     CUDA_CHECK(cudaSetDevice(gpuid));
@@ -276,7 +275,7 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
 
     vector<thrust::device_vector<T_kmer>> kmers_d_vec(n_streams); // for 0
     vector<size_t> tot_kmers(n_streams);
-    string logs = "GPU "+to_string(gpuid)+":";
+    string logs = "GPU "+to_string(gpuid)+"\t(T"+to_string(tid)+"):";
     for (i=0; i<n_streams; i++) {
         CUDA_CHECK(cudaStreamCreate(&streams[i]));
         // logger->log("GPU "+to_string(gpuid)+" Stream "+to_string(i)+" counting Partition "+to_string(skms_stores[i]->id), Logger::LV_INFO);

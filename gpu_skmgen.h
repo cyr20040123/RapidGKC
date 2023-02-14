@@ -1,5 +1,5 @@
-#ifndef _GKC_CUDA_H
-#define _GKC_CUDA_H
+#ifndef _GPU_SKMGEN_H
+#define _GPU_SKMGEN_H
 
 #define CUDA_CHECK(call) \
 if((call) != cudaSuccess) { \
@@ -17,12 +17,12 @@ while((call) != cudaSuccess) { \
 
 #include "utilities.hpp"
 #include "types.h"
-#include "V2_superkmers.hpp"
+#include "skmstore.hpp"
 #include <vector>
 #include <thread>
 #include <atomic>
 #include <functional>
-using namespace std;
+// using namespace std;
 
 // hint: better to sort the reads by their lengths so that cuda will work faster
 

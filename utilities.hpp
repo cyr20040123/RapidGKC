@@ -8,6 +8,7 @@
 #include <chrono>
 #include <string>
 #include <cstring>
+#include <cassert>
 #include <vector>
 #include <fstream>
 // #include <sstream>
@@ -158,7 +159,6 @@ public:
     int SKM_partitions = 31; // minimizer length and superkmer partitions
     T_kmer_cnt kmer_min_freq = 1, kmer_max_freq = 1000; // count kmer cnt in [min,max] included
     bool HPC = false;           // homopolymer compression assembly
-    bool CPU_only = false;
     int Kmer_filter = 25;       // percentage
     int N_threads = 4;          // threads per process
     int RD_threads_min = 2;
@@ -181,8 +181,10 @@ public:
     int n_streams_phase2 = 2;
     int reads_per_stream_mul = 1;
     int max_threads_per_gpu = 2;
+    bool CPU_only = false;
+    bool GPU_only = false;
 
-    bool GPU_compression = false;
+    // bool GPU_compression = false;
 
     void ArgParser(int argc, char* argvs[]) {
         // exe <k> <p> <tmp_file_folder> <_Kmer_filter>
@@ -193,7 +195,6 @@ public:
             else if (!strcmp(argvs[i], "-p")) P_minimizer = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-skm")) SKM_partitions = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-hpc")) HPC = bool(atoi(argvs[++i]));
-            else if (!strcmp(argvs[i], "-cpuonly")) CPU_only = bool(atoi(argvs[++i]));
             else if (!strcmp(argvs[i], "-kf")) Kmer_filter = atof(argvs[++i])*100;
             else if (!strcmp(argvs[i], "-tmp")) tmp_file_folder = std::string(argvs[++i]);
             else if (!strcmp(argvs[i], "-im")) to_file = false;
@@ -210,6 +211,8 @@ public:
             else if (!strcmp(argvs[i], "-ns2")) n_streams_phase2 = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-rps")) reads_per_stream_mul = atoi(argvs[++i]); // if short reads, set it to 2 or 4 to fully utilize gpu
             else if (!strcmp(argvs[i], "-tgpu")) max_threads_per_gpu = atoi(argvs[++i]);
+            else if (!strcmp(argvs[i], "-cpuonly")) CPU_only = true;
+            else if (!strcmp(argvs[i], "-gpuonly")) GPU_only = true;
             else if (!strcmp(argvs[i], "-read")) {
                 int j;
                 for (j=i+1; j<argc; j++, i++) {
@@ -231,6 +234,8 @@ public:
             tmp_file_folder.push_back('/');
         if (*log_file_folder.rbegin() != '/')
             log_file_folder.push_back('/');
+        assert (!(GPU_only && !n_devices));
+        assert (!(GPU_only && CPU_only));
     }
 } PAR;
 // ** Implementation **
@@ -251,7 +256,8 @@ struct CUDAParams {
     std::vector<size_t> vram_used;
     std::vector<std::mutex*> vram_mtx;
     // std::vector<int> gpuid_thread;
-    std::atomic<int> running_threads_for_gpu;
+    std::atomic<int> gpuworker_threads;
+    std::vector<std::atomic<int>*> running_threads_of_gpu;
     int max_threads_per_gpu;
 };
 

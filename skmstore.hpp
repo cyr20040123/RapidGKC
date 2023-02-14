@@ -1,5 +1,5 @@
-#ifndef _SUPERKMERS_HPP
-#define _SUPERKMERS_HPP
+#ifndef _SKMSTORE_HPP
+#define _SKMSTORE_HPP
 
 #include <mutex>
 #include <vector>

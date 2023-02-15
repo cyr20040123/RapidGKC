@@ -5,7 +5,7 @@
 #include <chrono>
 #include <algorithm>
 #include <bits/stdc++.h>
-#include "read_loader.hpp"
+#include "read_loader_V2.hpp"
 #include "cpu_funcs.h"
 #include "gpu_skmgen.h"
 #include "gpu_kmercounting.h"
@@ -140,14 +140,19 @@ void KmerCounting_TP(CUDAParams &gpars) {
     logger->log("**** Phase 1: Loading and generate superkmers ****", Logger::LV_NOTICE);
     WallClockTimer wct1;
     
-    for (auto readfile:PAR.read_files) {
-        WallClockTimer wct_tmp;
-        ReadLoader::work_while_loading_V2(
-            [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){process_reads_count(reads, gpars, skm_part_vec, tid);},
-            PAR.RD_threads_min, PAR.N_threads, readfile, PAR.Batch_read_loading, true, PAR.Buffer_fread_size_MB*ReadLoader::MB
-        );
-        logger->log(to_string(wct_tmp.stop())+"---- ["+readfile+"] processed ----\n", Logger::LV_NOTICE);
-    }
+    // for (auto readfile:PAR.read_files) {
+    //     WallClockTimer wct_tmp;
+    //     ReadLoader::work_while_loading_V2(
+    //         [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){process_reads_count(reads, gpars, skm_part_vec, tid);},
+    //         PAR.RD_threads_min, PAR.N_threads, readfile, PAR.Batch_read_loading, true, PAR.Buffer_fread_size_MB*ReadLoader::MB
+    //     );
+    //     logger->log(to_string(wct_tmp.stop())+"---- ["+readfile+"] processed ----\n", Logger::LV_NOTICE);
+    // }
+    WallClockTimer wct_tmp;
+    ReadLoader::work_while_loading_V2(
+        [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){process_reads_count(reads, gpars, skm_part_vec, tid);},
+        PAR.RD_threads_min, PAR.N_threads, PAR.read_files, PAR.Batch_read_loading, true, PAR.Buffer_fread_size_MB*ReadLoader::MB
+    );
     
     double p1_time = wct1.stop();
     logger->log("**** All reads loaded and SKMs generated (Phase 1 ends) ****", Logger::LV_NOTICE);

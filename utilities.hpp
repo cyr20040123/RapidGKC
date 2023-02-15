@@ -159,7 +159,7 @@ public:
     int SKM_partitions = 31; // minimizer length and superkmer partitions
     T_kmer_cnt kmer_min_freq = 1, kmer_max_freq = 1000; // count kmer cnt in [min,max] included
     bool HPC = false;           // homopolymer compression assembly
-    int Kmer_filter = 25;       // percentage
+    // int Kmer_filter = 25;       // percentage
     int N_threads = 4;          // threads per process
     int RD_threads_min = 2;
     // string tmp_file_folder = "./tmp/";
@@ -187,7 +187,6 @@ public:
     // bool GPU_compression = false;
 
     void ArgParser(int argc, char* argvs[]) {
-        // exe <k> <p> <tmp_file_folder> <_Kmer_filter>
         for (int i=1; i<argc-1; i++) {
             if (!strcmp(argvs[i], "-t")) N_threads = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-rdt")) RD_threads_min = atoi(argvs[++i]);
@@ -195,7 +194,7 @@ public:
             else if (!strcmp(argvs[i], "-p")) P_minimizer = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-skm")) SKM_partitions = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-hpc")) HPC = bool(atoi(argvs[++i]));
-            else if (!strcmp(argvs[i], "-kf")) Kmer_filter = atof(argvs[++i])*100;
+            // else if (!strcmp(argvs[i], "-kf")) Kmer_filter = atof(argvs[++i])*100;
             else if (!strcmp(argvs[i], "-tmp")) tmp_file_folder = std::string(argvs[++i]);
             else if (!strcmp(argvs[i], "-im")) to_file = false;
             else if (!strcmp(argvs[i], "-log")) log_file_folder = std::string(argvs[++i]);

@@ -45,7 +45,7 @@ size_t calVarStdev(vector<size_t> &vecNums) // calc avg max min var std cv (Coef
 /// @param gpars 
 /// @param skm_partition_stores 
 void process_reads_count(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMStoreNoncon*> &skm_partition_stores, int tid) {
-    if (true || gpars.gpuworker_threads >= gpars.max_threads_per_gpu * gpars.n_devices) {
+    if ((!PAR.GPU_only) && (PAR.CPU_only || gpars.gpuworker_threads > gpars.max_threads_per_gpu * gpars.n_devices)) {
         // call CPU splitter
         GenSuperkmerCPU (reads, PAR.K_kmer, PAR.P_minimizer, false, PAR.SKM_partitions, skm_partition_stores);
         return;
@@ -54,7 +54,7 @@ void process_reads_count(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMSt
     sort(reads.begin(), reads.end(), sort_comp); // TODO: remove and compare the performance
     PinnedCSR pinned_reads(reads);
     stringstream ss;
-    ss << "---- BATCH\tn_reads = " << reads.size() << "\tmin_len = " << reads.begin()->len << "\tmax_len = " << reads.rbegin()->len <<"\tsize = " << pinned_reads.size_capacity << "\t----";
+    ss << "-- BATCH  GPU: #reads: " << reads.size() << "\tmin_len = " << reads.begin()->len << "\tmax_len = " << reads.rbegin()->len <<"\tsize = " << pinned_reads.size_capacity << "\t--";
     logger->log(ss.str());
     assert(pinned_reads.get_n_reads() == reads.size());
     // logger->log("Pinned: "+to_string(pinned_reads.get_n_reads())+" size = "+to_string(pinned_reads.size_capacity));

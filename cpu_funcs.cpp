@@ -4,7 +4,6 @@
 #include <algorithm>
 
 using namespace std;
-// #define TEST
 
 const unsigned char basemap[256] = {
     255, 255, 255, 255, 255, 255, 255, 255, // 0..7
@@ -76,9 +75,7 @@ const unsigned char basemap_compl[256] = { // complement base
     255, 255, 255, 255, 255, 255, 255, 255  // 248..255
 };
 
-#ifndef TEST
 extern Logger *logger;
-#endif
 
 T_read_len _hpc_encoding (T_read_len len, const char* raw_read, byte* hpc_read) {
     T_read_len i_raw, i_hpc = 0;
@@ -243,7 +240,8 @@ void GenSuperkmerCPU (vector<ReadPtr> &reads,
     const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, 
     const int SKM_partitions, vector<SKMStoreNoncon*> skm_partition_stores)
 {
-    
+    WallClockTimer wct;
+
     const int SKM_BUFFER_SIZE = 16384; // 64M in total with 4096 partitions
     T_skm_partsize skm_cnt[SKM_partitions];
     T_skm_partsize kmer_cnt[SKM_partitions];
@@ -282,9 +280,7 @@ void GenSuperkmerCPU (vector<ReadPtr> &reads,
     for (i=0; i<SKM_partitions; i++)
         SKMStoreNoncon::save_skms(skm_partition_stores[i], skm_cnt[i], kmer_cnt[i], skm_buffer[i], skm_buf_pos[i], SKM_BUFFER_SIZE);//
         // delete skm_buffer[i]; // No need to delete here. The right is passed to func save_skms.
-    #ifndef TEST
-    logger->log("---- BATCH\tCPU:\t#Reads "+to_string(reads.size())+" ----");
-    #endif
+    logger->log("-- BATCH  CPU: #reads: "+to_string(reads.size())+" --  "+to_string(wct.stop()));
 }
 
 /**

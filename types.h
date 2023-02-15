@@ -5,6 +5,8 @@
 #define _out_
 #define _tmp_
 
+// #define LONGERKMER
+
 #include <cstdlib> // for size_t
 
 typedef size_t T_CSR_cap;

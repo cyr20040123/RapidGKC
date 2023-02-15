@@ -531,7 +531,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
     T_read_cnt items_per_stream = gpars.NUM_BLOCKS_PER_GRID * gpars.NUM_THREADS_PER_BLOCK * gpars.items_stream_mul;
     T_read_cnt cur_read = 0, end_read;
     i = 0; // i for which stream
-    string logs = "GPU "+to_string(gpuid)+":";
+    string logs = "   GPU "+to_string(gpuid)+":";
     while (cur_read < pinned_reads.n_reads) {
 
         for (i = 0; i < gpars.n_streams && cur_read < pinned_reads.n_reads; i++, cur_read += items_per_stream) {

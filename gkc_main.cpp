@@ -178,7 +178,6 @@ void KmerCounting_TP(CUDAParams &gpars) {
     logger->log("(with "+to_string(PAR.N_threads)+" threads)");
     
     WallClockTimer wct2;
-    int n_threads = PAR.N_threads;
     
     vector<T_kmc> kmc_result[PAR.SKM_partitions];
     // future<size_t> distinct_kmer_cnt[PAR.SKM_partitions];
@@ -186,7 +185,7 @@ void KmerCounting_TP(CUDAParams &gpars) {
 
     // V2: auto streams
     // todo: available gpu mem = GPU_VRAM // N_THREADS * N_GPUS, required: kmer_cnt * [8|16] * 3;
-    ThreadPool<size_t> tp(n_threads, 2);
+    ThreadPool<size_t> tp(PAR.N_threads, PAR.N_threads);
     int max_streams = min((PAR.SKM_partitions+max(PAR.n_devices, PAR.N_threads)) / max(PAR.n_devices, PAR.N_threads), PAR.n_streams_phase2);
     atomic<int> i_part{0};
     while (i_part < PAR.SKM_partitions) {

@@ -47,7 +47,7 @@ size_t calVarStdev(vector<size_t> &vecNums) // calc avg max min var std cv (Coef
 void process_reads_count(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMStoreNoncon*> &skm_partition_stores, int tid) {
     if ((!PAR.GPU_only) && (PAR.CPU_only || gpars.gpuworker_threads > gpars.max_threads_per_gpu * gpars.n_devices)) {
         // call CPU splitter
-        GenSuperkmerCPU (reads, PAR.K_kmer, PAR.P_minimizer, false, PAR.SKM_partitions, skm_partition_stores);
+        GenSuperkmerCPU (reads, PAR.K_kmer, PAR.P_minimizer, false, PAR.SKM_partitions, skm_partition_stores, tid);
         return;
     }
     gpars.gpuworker_threads ++;//

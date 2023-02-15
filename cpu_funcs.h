@@ -7,7 +7,7 @@
 
 void GenSuperkmerCPU (std::vector<ReadPtr> &reads,
     const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, 
-    const int SKM_partitions, std::vector<SKMStoreNoncon*> skm_partition_stores);
+    const int SKM_partitions, std::vector<SKMStoreNoncon*> skm_partition_stores, int tid);
 
 size_t KmerCountingCPU(T_kvalue k,
     SKMStoreNoncon *skms_store,

@@ -238,7 +238,7 @@ void gen_skms (byte *read, T_read_len len, T_read_len *skm_offs, T_minimizer *mi
 
 void GenSuperkmerCPU (vector<ReadPtr> &reads,
     const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, 
-    const int SKM_partitions, vector<SKMStoreNoncon*> skm_partition_stores)
+    const int SKM_partitions, vector<SKMStoreNoncon*> skm_partition_stores, int tid)
 {
     WallClockTimer wct;
 
@@ -280,7 +280,7 @@ void GenSuperkmerCPU (vector<ReadPtr> &reads,
     for (i=0; i<SKM_partitions; i++)
         SKMStoreNoncon::save_skms(skm_partition_stores[i], skm_cnt[i], kmer_cnt[i], skm_buffer[i], skm_buf_pos[i], SKM_BUFFER_SIZE);//
         // delete skm_buffer[i]; // No need to delete here. The right is passed to func save_skms.
-    logger->log("-- BATCH  CPU: #reads: "+to_string(reads.size())+" --  "+to_string(wct.stop()));
+    logger->log("-- BATCH  CPU (T"+to_string(tid)+"): #reads: "+to_string(reads.size())+" --  "+to_string(wct.stop()));
 }
 
 /**
@@ -502,9 +502,8 @@ size_t KmerCountingCPU(T_kvalue k,
     assert(validation_cnt == skms_store->kmer_cnt);
     delete [] kmers;//
     skms_store->clear_skm_data();
-    delete skms_store;//
-
     logger->log("CPU  \t(T"+to_string(tid)+"):\tPart "+to_string(skms_store->id)+" "+to_string(skms_store->tot_size_bytes)+"|"+to_string(skms_store->kmer_cnt)+" "+to_string(distinct_kmers)+" \t"+to_string(wct.stop()), Logger::LV_DEBUG);
+    delete skms_store;//
 
     return distinct_kmers;
 }

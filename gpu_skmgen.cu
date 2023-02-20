@@ -324,9 +324,6 @@ __global__ void GPU_GenSKMOffs(
         skm[0] = 0;
         for (i = 1; i <= len-K_kmer; i++) {
             new_skm = (minimizers[i] != minimizers[i-1]/*||i-last_skm_pos+K_kmer >= MAX_SKM_LEN*/);
-            #ifdef DEBUG
-            if (new_skm) printf("%c", _hash_partition(minimizers[i-1], SKM_partitions) == _hash_partition(minimizers[i], SKM_partitions)?'*':'-');
-            #endif
             skm_count += new_skm; // current minimizer != last minimizer, new skm generated
             last_skm_pos = (!new_skm) * last_skm_pos + (new_skm) * i;
             skm[skm_count] = last_skm_pos; // skm #skm_count (begins from 1) ends at last_skm_pos

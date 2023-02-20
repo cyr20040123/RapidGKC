@@ -67,6 +67,23 @@ void process_reads_count(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMSt
     // gpars.gpuworker_threads --;//
 }
 
+size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, vector<T_kmc> *kmc_result) {
+    size_t res = 0;
+    // if (tid / gpars.max_threads_per_gpu >= gpars.n_devices) {
+    if ((!PAR.GPU_only) && (PAR.CPU_only || tid >= gpars.n_devices * gpars.max_threads_per_gpu)) {
+        for (auto i: store_vec)
+            res += KmerCountingCPU(PAR.K_kmer, i, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[i->id], tid);
+    }
+    else {
+        int gpuid = tid / gpars.max_threads_per_gpu;
+        res += kmc_counting_GPU_streams (PAR.K_kmer, store_vec, gpars, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result, gpuid, tid);
+    }
+    return res;
+}
+size_t phase2_forceCPU (int tid, SKMStoreNoncon* skm_store, vector<T_kmc> *kmc_result) {
+    return KmerCountingCPU(PAR.K_kmer, skm_store, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[skm_store->id], tid);
+}
+/*
 size_t p2_kmc (int tid, int max_streams, atomic<int> &i_part, vector<size_t> &distinct_kmer_cnt, vector<SKMStoreNoncon*> &skm_part_vec, vector<T_kmc> *kmc_result, CUDAParams &gpars) {
     
     if (i_part >= PAR.SKM_partitions) return 0;
@@ -139,7 +156,7 @@ size_t p2_kmc (int tid, int max_streams, atomic<int> &i_part, vector<size_t> &di
     }
     return j-i;
 }
-
+*/
 void KmerCounting_TP(CUDAParams &gpars) {
     // GPUReset(gpars.device_id); // must before not after pinned memory allocation
 
@@ -198,13 +215,13 @@ void KmerCounting_TP(CUDAParams &gpars) {
     WallClockTimer wct2;
     
     vector<T_kmc> kmc_result[PAR.SKM_partitions];
-    // future<size_t> distinct_kmer_cnt[PAR.SKM_partitions];
-    vector<size_t> distinct_kmer_cnt(PAR.SKM_partitions, 0);
-
-    // V3: CPU+GPU
-    // todo: available gpu mem = GPU_VRAM // N_THREADS * N_GPUS, required: kmer_cnt * [8|16] * 3;
-    ThreadPool<size_t> tp(PAR.N_threads, PAR.N_threads);
     int max_streams = min((PAR.SKM_partitions+max(PAR.n_devices, PAR.N_threads)) / max(PAR.n_devices, PAR.N_threads), PAR.n_streams_phase2);
+    
+    // todo: available gpu mem = GPU_VRAM // N_THREADS * N_GPUS, required: kmer_cnt * [8|16] * 3;
+    /*
+    // ==== V3: CPU+GPU ====
+    vector<size_t> distinct_kmer_cnt(PAR.SKM_partitions, 0);
+    ThreadPool<size_t> tp(PAR.N_threads, PAR.N_threads);
     atomic<int> i_part{0};
     vector<T_kmc> *kmc_result_arr = kmc_result;
     // while (i_part < PAR.SKM_partitions) {
@@ -215,10 +232,45 @@ void KmerCounting_TP(CUDAParams &gpars) {
     }
     tp.finish();
     assert(i_part >= PAR.SKM_partitions);
+     */
+    future<size_t> distinct_kmer_cnt[PAR.SKM_partitions];
+    ThreadPool<size_t> tp(PAR.N_threads);
+    int j;
+    for (i=0; i<PAR.SKM_partitions; i=j) {
+        long long vram_avail = gpars.vram[0];
+        vector<SKMStoreNoncon*> store_vec;
+        // group a batch of skm partitions for GPU:
+        for (j = i; j < i+max_streams && j < PAR.SKM_partitions; j++) {
+            if (vram_avail - skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) * 3 > 0.1 * gpars.vram[0]) {
+                store_vec.push_back(skm_part_vec[j]);
+                vram_avail -= skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) * 3;
+            } else break;
+        }
+        if (store_vec.size() == 0) { // if VRAM is not enough to handle even one partition, use CPU
+            logger->log("Part "+to_string(j)+" is too large to be handled by GPU, use CPU...", Logger::LV_WARNING);
+            SKMStoreNoncon *t = skm_part_vec[j];
+            distinct_kmer_cnt[i] = tp.commit_task([t, &kmc_result](int tid){
+                return phase2_forceCPU (tid, t, kmc_result);
+            });
+            j++;
+        } else { // GPU work:
+            distinct_kmer_cnt[i] = tp.commit_task([store_vec, &gpars, &kmc_result](int tid){
+                return phase2 (tid, store_vec, gpars, kmc_result);
+            });
+        }
+    }
+    tp.finish();
 
     size_t distinct_kmer_cnt_tot = 0;
-    for (i=0; i<PAR.SKM_partitions; i++) {
+    /*
+    // ==== V3: CPU+GPU ====
+    for (i=0; i<PAR.SKM_partitions; i++)
         distinct_kmer_cnt_tot += distinct_kmer_cnt[i];
+     */
+    for (i=0; i<PAR.SKM_partitions; i++) {
+        if (distinct_kmer_cnt[i].valid()) {
+            distinct_kmer_cnt_tot += distinct_kmer_cnt[i].get();
+        }
     }
     std::cerr<<endl;
     

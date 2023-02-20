@@ -257,9 +257,8 @@ struct CUDAParams {
     std::vector<size_t> vram;
     std::vector<size_t> vram_used;
     std::vector<std::mutex*> vram_mtx;
-    // std::vector<int> gpuid_thread;
-    std::atomic<int> gpuworker_threads;
-    std::vector<std::atomic<int>*> running_threads_of_gpu;
+    // std::atomic<int> gpuworker_threads;
+    // std::vector<std::atomic<int>*> running_threads_of_gpu;
     int max_threads_per_gpu;
 };
 

@@ -30,8 +30,7 @@ struct ReadPtr {
 
 #ifndef LONGERKMER
 typedef unsigned long long T_kmer;
-#endif
-#ifdef LONGERKMER
+#else
 typedef unsigned __int128 T_kmer;
 // T_kmer TKMAX = 0xffffffffffffffffffffffffffffffff;
 #endif

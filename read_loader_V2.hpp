@@ -211,7 +211,7 @@ public:
     T_read_cnt reads_consumed = 0;
     T_read_cnt batch_size = 2000;
 
-    ReadLoader (int n_threads, vector<string> &filenames, T_read_cnt batch_size = 8000, size_t buffer_size = 20*MB) {
+    ReadLoader (int n_threads, vector<string> &filenames, T_read_cnt batch_size = 2000, size_t buffer_size = 20*MB) {
         // size_t file_size = get_file_size(filename[0].c_str());
         _filenames = filenames;
         int i;
@@ -314,7 +314,7 @@ public:
             if (not_1st_loop) {
                 read_cnt += _proc_res[i].get(); // wait for the previous round
                 // std::cerr<<"LOADED "<<read_cnt<<" CONSUMED "<<reads_consumed<<" BATCH "<<batch_size<<endl;
-                while (read_cnt - reads_consumed > 2 * batch_size) this_thread::sleep_for(1ms);
+                while (read_cnt - reads_consumed > 4 * batch_size) this_thread::sleep_for(1ms);
             }
         }
         tp.finish();
@@ -348,7 +348,7 @@ public:
     /// @param beg The begin position of reads to load.
     /// @param max_n Max number of reads to load by this calling.
     /// @return The number of reads loaded out
-    T_read_cnt get_reads(vector<ReadPtr> &reads, T_read_cnt beg=0, T_read_cnt max_n=-1) {
+    T_read_cnt get_reads(T_kvalue K_kmer, vector<ReadPtr> &reads, T_read_cnt beg=0, T_read_cnt max_n=-1) {
         T_read_cnt n = 0;
         int bat, i, j;
         bool no_read_left = false;
@@ -366,7 +366,8 @@ public:
                     #endif
                     for (j=_thread_bat_split_pos[i][bat-1]; j<_thread_bat_split_pos[i][bat]; j++) {
                         // assert(_thread_reads[i][j] != nullptr);
-                        reads.push_back({_thread_reads[i][j]->c_str(), T_read_len(_thread_reads[i][j]->length())});
+                        if (_thread_reads[i][j]->length() >= K_kmer)
+                            reads.push_back({_thread_reads[i][j]->c_str(), T_read_len(_thread_reads[i][j]->length())});
                     }
                 }
                 n += _thread_bat_split_pos[i][bat] - _thread_bat_split_pos[i][bat-1];
@@ -412,8 +413,8 @@ public:
     }
     
 
-    static void work_while_loading_V2 (std::function<void(vector<ReadPtr>&, int)> work_func, int loader_threads, int worker_threads, vector<string> &filenames, 
-        T_read_cnt batch_size=5000, bool delete_after_proc=false, size_t buffer_size = 20 * ReadLoader::MB)
+    static void work_while_loading_V2 (T_kvalue K_kmer, std::function<void(vector<ReadPtr>&, int)> work_func, int loader_threads, int worker_threads, vector<string> &filenames, 
+        T_read_cnt batch_size, bool delete_after_proc=false, size_t buffer_size = 20 * ReadLoader::MB)
     {
         ThreadPool<void> tp(worker_threads);
         
@@ -435,7 +436,7 @@ public:
                 case future_status::timeout:
                     if (rl.get_read_cnt() - n_read_loaded >= batch_size) {
                         reads = new vector<ReadPtr>();//
-                        reads_loaded = rl.get_reads(*reads, n_read_loaded, batch_size);
+                        reads_loaded = rl.get_reads(K_kmer, *reads, n_read_loaded, batch_size);
                         // ... process reads
                         tp.commit_task([reads, &work_func, delete_after_proc, &rl, n_read_loaded, reads_loaded](int tid){
                             work_func(*reads, tid); delete reads;//
@@ -445,9 +446,9 @@ public:
                     }
                     break;
                 case future_status::ready:  // all reads are loaded
-                    if (n_read_loaded < rl.read_cnt) {
+                    while (n_read_loaded < rl.read_cnt) {
                         reads = new vector<ReadPtr>();//
-                        reads_loaded = rl.get_reads(*reads, n_read_loaded, -1);
+                        reads_loaded = rl.get_reads(K_kmer, *reads, n_read_loaded, batch_size);
                         // ... process reads
                         tp.commit_task([reads, &work_func, delete_after_proc, &rl, n_read_loaded, reads_loaded](int tid){
                             work_func(*reads, tid); delete reads;//

@@ -183,6 +183,7 @@ public:
     int max_threads_per_gpu = 2;
     bool CPU_only = false;
     bool GPU_only = false;
+    bool check_VRAM = false;
 
     // bool GPU_compression = false;
 
@@ -212,6 +213,7 @@ public:
             else if (!strcmp(argvs[i], "-tgpu")) max_threads_per_gpu = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-cpuonly")) CPU_only = true;
             else if (!strcmp(argvs[i], "-gpuonly")) GPU_only = true;
+            else if (!strcmp(argvs[i], "-checkvram")) check_VRAM = true;
             else if (!strcmp(argvs[i], "-read")) {
                 int j;
                 for (j=i+1; j<argc; j++, i++) {
@@ -235,6 +237,7 @@ public:
             log_file_folder.push_back('/');
         assert (!(GPU_only && !n_devices));
         assert (!(GPU_only && CPU_only));
+        assert (sizeof(size_t) == sizeof(unsigned long long));
     }
 } PAR;
 // ** Implementation **

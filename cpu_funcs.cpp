@@ -242,7 +242,7 @@ void GenSuperkmerCPU (vector<ReadPtr> &reads,
 {
     WallClockTimer wct;
 
-    const int SKM_BUFFER_SIZE = 16384; // 64M in total with 4096 partitions
+    const int SKM_BUFFER_SIZE = 32768; // 128M in total with 4096 partitions
     T_skm_partsize skm_cnt[SKM_partitions];
     T_skm_partsize kmer_cnt[SKM_partitions];
     byte *skm_buffer[SKM_partitions]; // flush to store when buffer full

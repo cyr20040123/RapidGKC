@@ -271,9 +271,9 @@ void GenSuperkmerCPU (vector<ReadPtr> &reads,
             SKM_BUFFER_SIZE, skm_cnt, kmer_cnt, skm_buffer, skm_buf_pos,
             skm_partition_stores);
 
-        delete read;//
-        delete skm_offs;//
-        delete minimizers;//
+        delete [] read;//
+        delete [] skm_offs;//
+        delete [] minimizers;//
     }
     
     // dump skm buffer to store
@@ -331,7 +331,7 @@ void _inplace_reorder (_out_ T_kmer *kmers, T_skm_partsize n_kmers, int right_sh
 }
 void _reorder (_out_ T_kmer *kmers, T_skm_partsize n_kmers, int right_shift, const T_kmer base_mask, const int NB, size_t *offs) {
     right_shift = right_shift > 0 ? right_shift : 0;
-    T_kmer *swap = new T_kmer [n_kmers];
+    T_kmer *swap = new T_kmer [n_kmers];//
     memcpy(swap, kmers, n_kmers * sizeof(T_kmer));
 
     size_t i = 0;
@@ -344,7 +344,7 @@ void _reorder (_out_ T_kmer *kmers, T_skm_partsize n_kmers, int right_shift, con
         kmers[offs[target_bin]+pos[target_bin]] = swap[i];
         pos[target_bin]++;
     }
-    delete [] swap;
+    delete [] swap;//
 }
 void sort_kmers (T_kmer *kmers, const T_skm_partsize n_kmers, const T_kvalue K_kmer, int i_base = 0) {
     if (i_base >= K_kmer || n_kmers <= 1) return;
@@ -398,10 +398,22 @@ void _extract_kmers_cpu (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* k
     }
     else {
         size_t skm_store_pos = 0;
+        #ifdef SKMSTOREV1
         for (i=0; i<skms_store.skm_chunk_bytes.size(); i++) {
             memcpy(skms+skm_store_pos, skms_store.skm_chunks[i], skms_store.skm_chunk_bytes[i]);
             skm_store_pos += skms_store.skm_chunk_bytes[i];
         }
+        #else
+        SKM skm_bulk[1024];
+        size_t count;
+        do {
+            count = skms_store.skms.try_dequeue_bulk(skm_bulk, 1024);
+            for (i=0; i<count; i++) {
+                memcpy(skms+skm_store_pos, skm_bulk[i].skm_chunk, skm_bulk[i].chunk_bytes);
+                skm_store_pos += skm_bulk[i].chunk_bytes;
+            }
+        } while (count);
+        #endif
         assert(skms_store.tot_size_bytes == skm_store_pos);
     }
     // extract kmers

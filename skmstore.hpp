@@ -1,15 +1,23 @@
 #ifndef _SKMSTORE_HPP
 #define _SKMSTORE_HPP
 
+// #define SKMSTOREV1
+
 #include <mutex>
 #include <vector>
 #include <cstring>
 #include "types.h"
 #include "utilities.hpp"
+#include "concurrent_queue.h"
 #include <iostream>
 // #define DEBUG
 #include <cassert>
 using namespace std;
+
+struct SKM {
+    size_t chunk_bytes;
+    byte* skm_chunk;
+};
 
 class SKMStoreNoncon {
 public:
@@ -21,20 +29,29 @@ public:
     string filename;
 
     // no compression
+    #ifdef SKMSTOREV1
     vector<size_t> skm_chunk_bytes;
     vector<const byte*> skm_chunks;
     
-    // compression
-    vector<size_t> skm_chunk_compressed_bytes;
-    size_t tot_size_compressed = 0;
-    
-    mutex data_mtx;
     size_t tot_size_bytes = 0;
     size_t skm_cnt = 0;
     size_t kmer_cnt = 0;
-
-    mutex dl_mtx;
-    vector<const byte*> delete_list;
+    #else
+    moodycamel::ConcurrentQueue<SKM> skms;
+    atomic<size_t> tot_size_bytes{0};
+    atomic<size_t> skm_cnt{0};
+    atomic<size_t> kmer_cnt{0};
+    #endif
+    
+    mutex data_mtx;
+    
+    // compression
+    // vector<size_t> skm_chunk_compressed_bytes;
+    // size_t tot_size_compressed = 0;
+    
+    // mutex dl_mtx;
+    // vector<const byte*> delete_list;
+    moodycamel::ConcurrentQueue<byte*> delete_list;
     
     void _write_to_file(const byte* data, size_t size) {
         #ifdef DEBUG
@@ -65,42 +82,47 @@ public:
     /// @param skms_chunk the chunk which stores multiple skms
     /// @param data_bytes the uncompressed size in bytes of this chunk
     /// @param compressed_bytes the compressed size in bytes of this chunk
-    void add_skms (const byte* skms_chunk, size_t data_bytes, size_t b_skm_cnt, size_t b_kmer_cnt, size_t compressed_bytes = 0) {
+    void add_skms (byte* skms_chunk, size_t data_bytes, size_t b_skm_cnt, size_t b_kmer_cnt/*, size_t compressed_bytes = 0*/) {
+        #ifdef SKMSTOREV1
         data_mtx.lock();
+        #endif
         if (to_file) {
             #ifdef DEBUG
             assert (compressed_bytes==0);
             #endif
+            #ifndef SKMSTOREV1
+            data_mtx.lock();
+            #endif
             _write_to_file (skms_chunk, data_bytes);
+            #ifndef SKMSTOREV1
+            data_mtx.unlock();
+            #endif
         } else {
-            if (compressed_bytes) {
-                skm_chunks.push_back(skms_chunk);
-                // else {
-                //     byte* new_cskm = new byte [compressed_bytes];
-                //     memcpy(new_cskm, skms_chunk, compressed_bytes * sizeof(byte));
-                //     skm_chunks.push_back(skms_chunk);
-                // }
-                skm_chunk_bytes.push_back(data_bytes);
-                skm_chunk_compressed_bytes.push_back(compressed_bytes);
-            } else {
-                skm_chunks.push_back(skms_chunk);
-                // else {
-                //     byte* new_skm = new byte [data_bytes];
-                //     memcpy(new_skm, skms_chunk, data_bytes);
-                //     skm_chunks.push_back(new_skm);
-                // }
-                skm_chunk_bytes.push_back(data_bytes);
-            }
+            #ifdef SKMSTOREV1
+            skm_chunks.push_back(skms_chunk);
+            skm_chunk_bytes.push_back(data_bytes);
+            #else
+            SKM data{data_bytes, skms_chunk};
+            skms.enqueue(data);
+            #endif
         }
         tot_size_bytes += data_bytes;
-        tot_size_compressed += compressed_bytes;
         this->skm_cnt += b_skm_cnt;
         this->kmer_cnt += b_kmer_cnt;
+        #ifdef SKMSTOREV1
         data_mtx.unlock();
+        #endif
     }
-    bool is_compressed() {return skm_chunk_compressed_bytes.size();}
+    // bool is_compressed() {return skm_chunk_compressed_bytes.size();}
     void clear_skm_data () {
-        for (auto i:delete_list) delete i;
+        size_t count;
+        byte* items[1024];
+        int i;
+        do {
+            count = delete_list.try_dequeue_bulk(items, 1024);
+            for (i = 0; i < count; i++) delete [] items[i];
+        } while (count);
+        // for (auto i:delete_list) delete i;
     }
 
     /// @brief for uncompressed skms saving, do not support delete in advance
@@ -115,7 +137,7 @@ public:
         int i;
         int SKM_partitions = skms_stores.size();
         for (i=0; i<SKM_partitions; i++)
-            skms_stores[i]->add_skms(&skm_store_csr[skmpart_offs[i]], skmpart_offs[i+1]-skmpart_offs[i], skm_cnt[i], kmer_cnt[i], 0);
+            skms_stores[i]->add_skms(&skm_store_csr[skmpart_offs[i]], skmpart_offs[i+1]-skmpart_offs[i], skm_cnt[i], kmer_cnt[i]);
         if (skms_stores[0]->to_file) delete skm_store_csr;//
     }
 
@@ -141,17 +163,19 @@ public:
             delete [] skm_data;
             if (skms_store->to_file) delete tmp;
             else {
-                skms_store->dl_mtx.lock();
-                skms_store->delete_list.push_back(tmp);
-                skms_store->dl_mtx.unlock();
+                skms_store->delete_list.enqueue(tmp);
+                // skms_store->dl_mtx.lock();
+                // skms_store->delete_list.push_back(tmp);
+                // skms_store->dl_mtx.unlock();
             }
         } else {
             skms_store->add_skms(skm_data, data_bytes, skm_cnt, kmer_cnt);
             if (skms_store->to_file) delete [] skm_data;
             else {
-                skms_store->dl_mtx.lock();
-                skms_store->delete_list.push_back(skm_data);
-                skms_store->dl_mtx.unlock();
+                skms_store->delete_list.enqueue(skm_data);
+                // skms_store->dl_mtx.lock();
+                // skms_store->delete_list.push_back(skm_data);
+                // skms_store->dl_mtx.unlock();
             }
         }
     }

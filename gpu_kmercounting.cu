@@ -237,11 +237,25 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kme
         int i;
         // byte *d_store_pos = d_skms;
         size_t d_store_pos = 0;
+        #ifdef SKMSTOREV1
         for (i=0; i<skms_store.skm_chunk_bytes.size(); i++) {
             CUDA_CHECK(cudaMemcpyAsync(d_skms+d_store_pos, skms_store.skm_chunks[i], skms_store.skm_chunk_bytes[i], cudaMemcpyHostToDevice, stream));
-            // CUDA_CHECK(cudaStreamSynchronize(stream)); // 不加这行用CPU step 1会卡死 7.60s(+) vs 7.40s(-)
+            // CUDA_CHECK(cudaStreamSynchronize(stream)); // 不加这行用CPU step 1会卡死 7.60s(+) vs 7.40s(-) // TODO: check this
             d_store_pos += skms_store.skm_chunk_bytes[i];
         }
+        #else
+        SKM skm_bulk[1024];
+        size_t count;
+        do {
+            count = skms_store.skms.try_dequeue_bulk(skm_bulk, 1024);
+            for (i=0; i<count; i++) {
+                CUDA_CHECK(cudaMemcpyAsync(d_skms+d_store_pos, skm_bulk[i].skm_chunk, skm_bulk[i].chunk_bytes, cudaMemcpyHostToDevice, stream));
+                d_store_pos += skm_bulk[i].chunk_bytes;
+                // memcpy(skms+skm_store_pos, skm_bulk[i].skm_chunk, skm_bulk[i].chunk_bytes);
+                // skm_store_pos += skm_bulk[i].chunk_bytes;
+            }
+        } while (count);
+        #endif
     }
     // cerr<<"debug2"<<endl;
     // CUDA_CHECK(cudaStreamSynchronize(stream));
@@ -300,7 +314,7 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             thrust::transform(thrust::device.on(streams[i]), kmers_d_vec[i].begin(), kmers_d_vec[i].end(), ik, kmers_d_vec[i].begin(), canonicalkmer());
             // ---- 2. sort: [ABCBBAC] -> [AABBBCC] (kmers_d) ---- 
             thrust::sort(thrust::device.on(streams[i]), kmers_d_vec[i].begin(), kmers_d_vec[i].end()/*, thrust::greater<T_kmer>()*/);
-            skms_stores[i]->clear_skm_data(); // TODO: 移到sort前并在之前加streamsync
+            skms_stores[i]->clear_skm_data(); // TODO: 在sort之前加streamsync
             // ---- 3. find changes: [AABBBCC] -> [0,1,0,1,1,0,1] (same_flag_d) ---- 
             same_flag_d_vec[i] = thrust::device_vector<bool>(kmers_d_vec[i].size());
             thrust::transform(thrust::device.on(streams[i]), kmers_d_vec[i].begin()+1 /*x beg*/, kmers_d_vec[i].end() /*x end*/, kmers_d_vec[i].begin()/*y beg*/, same_flag_d_vec[i].begin()+1/*res beg*/, sameasprev());

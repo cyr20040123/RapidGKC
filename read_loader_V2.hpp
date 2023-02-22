@@ -268,7 +268,7 @@ public:
         delete [] _threadreads_mtx;//d9
         delete [] _thread_bat_split_pos;//d10
     }
-    void load_file () { // load file and store reads into _thread_reads
+    void load_file (int worker_threads) { // load file and store reads into _thread_reads
         int i_file = 0;
 
         // Determine the file type:
@@ -314,7 +314,7 @@ public:
             if (not_1st_loop) {
                 read_cnt += _proc_res[i].get(); // wait for the previous round
                 // std::cerr<<"LOADED "<<read_cnt<<" CONSUMED "<<reads_consumed<<" BATCH "<<batch_size<<endl;
-                // while (read_cnt - reads_consumed > 4 * batch_size) this_thread::sleep_for(1ms);
+                while (read_cnt - reads_consumed > worker_threads * 2 * batch_size) this_thread::sleep_for(1ms);
             }
         }
         tp.finish();
@@ -422,7 +422,7 @@ public:
         ReadLoader rl(loader_threads, filenames, batch_size, buffer_size);
         // promise<void> file_loading_prom;
         // thread file_loading_t([&rl, &file_loading_prom](){return rl.load_file_V2(file_loading_prom);});
-        future<void> file_loading_res = async(std::launch::async, [&rl](){return rl.load_file();});
+        future<void> file_loading_res = async(std::launch::async, [&rl, worker_threads](){return rl.load_file(worker_threads);});
         // future<void> file_loading_res = file_loading_prom.get_future();
 
         T_read_cnt n_read_loaded = 0, reads_loaded;

@@ -342,6 +342,7 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
         }
     }
     
+    #ifdef RESULT_VALIDATION
     // validation and export result:
     for (i=0; i<n_streams; i++) {
         // string outfile = "/mnt/f/study/bio_dataset/tmp/" + to_string(skms_stores[i]->id) + ".txt";
@@ -365,6 +366,7 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
         assert(total_kmer_cnt == skms_stores[i]->kmer_cnt);
         // fclose(fp);
     }
+    #endif
 
     for (i=0; i<n_streams; i++) {
         if (skms_stores[i]->tot_size_bytes == 0) continue;

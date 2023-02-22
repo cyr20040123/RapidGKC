@@ -41,6 +41,7 @@ public:
     atomic<size_t> tot_size_bytes{0};
     atomic<size_t> skm_cnt{0};
     atomic<size_t> kmer_cnt{0};
+    // byte* skm_all_concat;
     #endif
     
     mutex data_mtx;
@@ -124,6 +125,22 @@ public:
         } while (count);
         // for (auto i:delete_list) delete i;
     }
+
+    // #ifndef SKMSTOREV1
+    // void concatenate_skm_chunks () { // TODO HERE, efficient for short read dataset
+    //     skm_all_concat = new byte[tot_size_bytes];
+    //     SKM data[1024];
+    //     size_t count;
+    //     do {
+    //         count = skms.try_dequeue_bulk(data, 1024);
+    //         for (int i=0; i<count; i++) {
+
+    //             skm_chunk_bytes.push_back(data[i].chunk_bytes);
+    //             skm_chunks.push_back(data[i].skm_chunk);
+    //         }
+    //     } while (count);
+    // }
+    // #endif
 
     /// @brief for uncompressed skms saving, do not support delete in advance
     /// @param skms_stores SKMStoreNoncon * N_Partitions

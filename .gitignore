@@ -21,3 +21,4 @@ deprecated/*
 unused/*
 *.nsys-rep
 *.log
+avx*

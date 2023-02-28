@@ -13,6 +13,11 @@
 #include "types.h"
 #include "thread_pool.hpp"
 
+#include <fcntl.h>      // open
+#include <sys/mman.h>   // mmap
+#include <sys/stat.h>   // fstat
+#include <unistd.h>     // close
+
 #ifdef DEBUG
 #include <cassert>
 #endif
@@ -20,6 +25,7 @@
 struct DataBuffer {
     char *buf;
     size_t size;
+    int closefd = -1;
 };
 struct LineBuffer {
     DataBuffer data;
@@ -45,7 +51,7 @@ private:
 
     std::vector<std::thread> _started_threads;
     
-    void _STEP1_load_from_file () {
+    void _STEP1_load_from_file_old () {
         // size_t push_cnt = 0;
 
         char *buf = new char [_buffer_size];//
@@ -72,6 +78,35 @@ private:
         _DBQ.finish();
         std::cout<<"Loader finish 1 "/*<<push_cnt*/<<std::endl;
         delete buf;//
+    }
+    
+    void _STEP1_load_from_file () {
+        // char *buf = new char [_buffer_size];//
+        size_t cur_size;
+        for (std::string &filename: _filenames) {
+            int fd = open(filename.c_str(), O_RDONLY);
+            struct stat statue;
+            fstat(fd, &statue);
+            char *fileptr = (char *) mmap(NULL, statue.st_size, PROT_READ, MAP_SHARED, fd, 0); // MAP_SHARED
+
+            for (size_t i=0; i<statue.st_size; i+=_buffer_size) {
+                DataBuffer t;
+                t.buf = fileptr + i;
+                t.size = statue.st_size - i < _buffer_size ? statue.st_size - i : _buffer_size;
+                _DBQ.wait_push(t, _max_queue_size);
+            }
+            
+            DataBuffer t;
+            t.size = statue.st_size;
+            t.buf = fileptr;
+            t.closefd = fd;
+            #ifdef WAITMEASURE
+            output_wait();
+            #endif
+            _DBQ.push(t); // push a null block when file ends
+        }
+        _DBQ.finish();
+        std::cout<<"Loader finish 1 "/*<<push_cnt*/<<std::endl;
     }
     void _STEP2_find_newline () {
         // size_t push_cnt = 0;
@@ -131,7 +166,12 @@ private:
         while (_LBQ.pop(t)) {
             // pop_cnt++;
             // line_cnt+=t.newline_vec.size();
-            if (t.data.size==0) { // new file
+            // if (t.data.size==0) { // new file
+            //     line_flag = 0;
+            //     continue;
+            // }
+            if (t.data.closefd!=-1) { // new file
+                std::cerr<<"File closed: "<<munmap(t.data.buf, t.data.size)<<close(t.data.closefd)<<", size: "<<t.data.size<<std::endl;
                 line_flag = 0;
                 continue;
             }
@@ -166,7 +206,7 @@ private:
                 start_from_buffer = true;
                 last_line_buffer = std::string(&t.data.buf[*t.newline_vec.rbegin()+1], t.data.size - *t.newline_vec.rbegin() - 1);
             }
-            delete t.data.buf; // malloc in _STEP1_load_from_file
+            // delete t.data.buf; // malloc in _STEP1_load_from_file
         }
         if (batch_reads.size()) _RBQ.push(batch_reads); // add last batch of reads
         _RBQ.finish();

@@ -3,6 +3,7 @@
 
 // #define DEBUG
 
+#include <future>
 #include <thread>
 #include <functional>
 #include <vector>
@@ -22,11 +23,8 @@ struct DataBuffer {
 struct LineBuffer {
     DataBuffer data;
     std::vector<size_t> newline_vec;
+    std::vector<size_t> newline_vec2;
 };
-// struct ReadPtr {
-//     char* read;
-//     T_read_len len;
-// };
 
 class ReadLoader {
 private:
@@ -37,6 +35,7 @@ private:
     bool _is_fasta;
     
     size_t _read_batch_size;
+    T_read_len _min_read_len;
     
     size_t _buffer_size;
     size_t _max_queue_size;
@@ -63,6 +62,9 @@ private:
             std::cout<<filename<<" closed: "<<fclose(fp)<<std::endl;
             DataBuffer t;
             t.size = 0;
+            #ifdef WAITMEASURE
+            output_wait();
+            #endif
             _DBQ.push(t); // push a null block when file ends
             // push_cnt++;
         }
@@ -75,19 +77,27 @@ private:
         // size_t line_cnt = 0;
         DataBuffer t;
         while (_DBQ.pop(t)) {
-            size_t move_offs = 0;
+            // size_t move_offs = 0;
             LineBuffer x;
             x.data = std::move(t);
+            x.newline_vec.reserve((t.size>>11)+8);
+            x.newline_vec2.reserve((t.size>>11)+8);
             // x.newline_vec = std::vector<size_t>();
+            std::future<void> fu = std::async(std::launch::async, [&x](){
+                for (int i=x.data.size/2; i<x.data.size; i++)
+                    if (x.data.buf[i] == '\n') x.newline_vec2.push_back(i);
+            });
             x.newline_vec.push_back(-1);
-            for (size_t i=0; i<x.data.size; i++) {
+            for (size_t i=0; i<x.data.size/2; i++) {
                 // clean '\r':
-                if (move_offs != 0) x.data.buf[i-move_offs] = x.data.buf[i];
+                // if (move_offs != 0) x.data.buf[i-move_offs] = x.data.buf[i];
                 // check '\n':
-                if (x.data.buf[i-move_offs] == '\n') x.newline_vec.push_back(i-move_offs); //, line_cnt++;
+                // if (x.data.buf[i-move_offs] == '\n') x.newline_vec.push_back(i-move_offs); //, line_cnt++;
+                if (x.data.buf[i] == '\n') x.newline_vec.push_back(i);
                 // check '\r':
-                if (x.data.buf[i] == '\r') move_offs++;
+                // if (x.data.buf[i] == '\r') move_offs++;
             }
+            fu.get();
             _LBQ.wait_push(x, _max_queue_size);
             // push_cnt++;
         }
@@ -115,10 +125,13 @@ private:
                 line_flag = 0;
                 continue;
             }
+            t.newline_vec.reserve(t.newline_vec.size() + t.newline_vec2.size());
+            t.newline_vec.insert(t.newline_vec.end(), t.newline_vec2.begin(), t.newline_vec2.end());
             for (i = 1; i < t.newline_vec.size(); i++, line_flag=(line_flag+1) & flag_mask) { // begins from 1 because q[0]=-1
                 if (line_flag == 1) {
                     if (start_from_buffer) {
                         read.len = last_line_buffer.size() + t.newline_vec[i];
+                        if (t.newline_vec[i]-1>0 && t.data.buf[t.newline_vec[i]-1]=='\t') read.len--;
                         read.read = new char [read.len];
                         memcpy(read.read, last_line_buffer.c_str(), last_line_buffer.size());
                         memcpy(read.read + last_line_buffer.size(), t.data.buf, t.newline_vec[i]);
@@ -126,10 +139,11 @@ private:
                         start_from_buffer = false;
                     } else {
                         read.len = t.newline_vec[i] - (t.newline_vec[i-1] + 1);
+                        if (t.newline_vec[i]-1>0 && t.data.buf[t.newline_vec[i]-1]=='\t') read.len--;
                         read.read = new char [read.len];
                         memcpy(read.read, &(t.data.buf[t.newline_vec[i-1] + 1]), read.len);
                     }
-                    batch_reads.push_back(read);
+                    if (read.len >= _min_read_len) batch_reads.push_back(read);
                     if (batch_reads.size() >= _read_batch_size) {
                         _RBQ.wait_push(batch_reads, _n_threads_consumer + 2);
                         batch_reads = std::vector<ReadPtr>();
@@ -144,20 +158,22 @@ private:
             }
             delete t.data.buf; // malloc in _STEP1_load_from_file
         }
-        if (batch_reads.size()) _RBQ.wait_push(batch_reads, _n_threads_consumer + 2); // add last batch of reads
+        if (batch_reads.size()) _RBQ.push(batch_reads); // add last batch of reads
         _RBQ.finish();
         std::cout<<"Loader finish 3 "/*<<pop_cnt<<" "<<push_cnt<<" "<<line_cnt*/<<std::endl;
     }
 public:
     static const size_t MB = 1048576;
     static const size_t KB = 1024;
-    ReadLoader (std::vector<std::string> filenames, size_t read_batch_size = 8192, int buffer_size_MB = 16, int max_buffer_size_MB = 1024, int n_threads_consumer = 16) {
+    ReadLoader (std::vector<std::string> filenames, T_read_len min_read_len = 0, size_t read_batch_size = 8192, int buffer_size_MB = 16, int max_buffer_size_MB = 1024, int n_threads_consumer = 16) {
         _filenames = filenames;
+        _is_fasta = *(filenames[0].rbegin()) == 'a' || *(filenames[0].rbegin()) == 'A';
+        if (_is_fasta) max_buffer_size_MB /= 2; // for fasta, the buffer size required should be 1/2 smaller.
+        _min_read_len = min_read_len;
         _read_batch_size = read_batch_size;
         _max_queue_size = max_buffer_size_MB / buffer_size_MB / 2;
         _buffer_size = buffer_size_MB * MB;
         _n_threads_consumer = n_threads_consumer;
-        _is_fasta = *(filenames[0].rbegin()) == 'a' || *(filenames[0].rbegin()) == 'A';
         std::cout<<(_is_fasta?"Fasta format.":"Fastq format.")<<std::endl;
     }
     void start_load_reads() {
@@ -186,9 +202,9 @@ public:
     #endif
     #ifdef WAITMEASURE
     void output_wait () {
-        std::cout<<"1 Load    wait count: "<<_DBQ.debug_push_wait<<std::endl;
-        std::cout<<"2 Newline wait count: "<<_LBQ.debug_push_wait<<std::endl;
-        std::cout<<"3 Extract wait count: "<<_RBQ.debug_push_wait<<std::endl;
+        std::cout<<"1 Load    push wait: "<<_DBQ.debug_push_wait<<"\tpop wait: "<<_DBQ.debug_pop_wait<<std::endl;
+        std::cout<<"2 Newline push wait: "<<_LBQ.debug_push_wait<<"\tpop wait: "<<_LBQ.debug_pop_wait<<std::endl;
+        std::cout<<"3 Extract push wait: "<<_RBQ.debug_push_wait<<"\tpop wait: "<<_RBQ.debug_pop_wait<<std::endl;
     }
     #endif
     static void work_while_loading (T_kvalue K_kmer, std::function<void(std::vector<ReadPtr>&, int)> work_func, int worker_threads, std::vector<std::string> &filenames, 
@@ -196,8 +212,8 @@ public:
         
         T_read_len n_read_loaded = 0;
 
-        ThreadPool<void> tp(worker_threads, worker_threads+2);
-        ReadLoader rl(filenames, batch_size, buffer_size_MB, max_buffer_size_MB, worker_threads);
+        ThreadPool<void> tp(worker_threads, worker_threads + worker_threads/2 > 2 ? worker_threads/4 : 2);
+        ReadLoader rl(filenames, K_kmer, batch_size, buffer_size_MB, max_buffer_size_MB, worker_threads);
         rl.start_load_reads();
 
         std::vector<ReadPtr> read_batch;
@@ -217,16 +233,16 @@ public:
         std::cerr<<"Total reads loaded: "<<n_read_loaded<<std::endl;
         rl.join_threads();
         tp.finish();
-        #ifdef WAITMEASURE
-        rl.output_wait();
-        #endif
+        // #ifdef WAITMEASURE
+        // rl.output_wait();
+        // #endif
     }
 };
 
 #ifdef DEBUG
 int main() {
     std::vector<std::string> filenames {"/mnt/f/study/bio_dataset/hg002pacbio/man_files/SRR8858432.man.fasta"};
-    ReadLoader rl(filenames, 8192, 16, 512, 1);
+    ReadLoader rl(filenames, 0, 8192, 16, 512, 1);
     size_t s = 0;
     rl.debug_load_reads_with_worker([&s](std::vector<ReadPtr>& batch_reads, int tid){
         for(auto &i:batch_reads) {

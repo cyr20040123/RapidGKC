@@ -1,3 +1,6 @@
+#ifndef _CONCQUEUE_HPP
+#define _CONCQUEUE_HPP
+
 #define WAITMEASURE
 
 #include <mutex>
@@ -20,6 +23,7 @@ private:
 public:
     #ifdef WAITMEASURE
     std::atomic<size_t> debug_push_wait{0};
+    std::atomic<size_t> debug_pop_wait{0};
     #endif
     ConcQueue& operator=(const ConcQueue&) = delete;
     ConcQueue (bool external_wait_support = false) {
@@ -69,7 +73,14 @@ public:
     }
     bool pop (T &item) {
         std::unique_lock<std::mutex> lck(_mtx);
+        #ifdef WAITMEASURE
+        _cv.wait(lck, [this](){
+            if ((!this->_Q.empty()) || this->_finished) return true;
+            else {debug_pop_wait++; return false;}
+        });
+        #else
         _cv.wait(lck, [this](){return (!this->_Q.empty()) || this->_finished;});
+        #endif
         if (_Q.empty()) return false;
         item = _Q.front();
         _Q.pop_front();
@@ -88,3 +99,5 @@ public:
         return _size;
     }
 };
+
+#endif

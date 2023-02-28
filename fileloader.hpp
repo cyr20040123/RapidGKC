@@ -80,6 +80,8 @@ private:
             // size_t move_offs = 0;
             LineBuffer x;
             x.data = std::move(t);
+            x.newline_vec.reserve((t.size>>11)+8);
+            x.newline_vec2.reserve((t.size>>11)+8);
             // x.newline_vec = std::vector<size_t>();
             std::future<void> fu = std::async(std::launch::async, [&x](){
                 for (int i=x.data.size/2; i<x.data.size; i++)
@@ -156,7 +158,7 @@ private:
             }
             delete t.data.buf; // malloc in _STEP1_load_from_file
         }
-        if (batch_reads.size()) _RBQ.wait_push(batch_reads, _n_threads_consumer + 2); // add last batch of reads
+        if (batch_reads.size()) _RBQ.push(batch_reads); // add last batch of reads
         _RBQ.finish();
         std::cout<<"Loader finish 3 "/*<<pop_cnt<<" "<<push_cnt<<" "<<line_cnt*/<<std::endl;
     }

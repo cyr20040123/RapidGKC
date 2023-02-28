@@ -79,18 +79,19 @@ private:
         // size_t line_cnt = 0;
         DataBuffer t;
         while (_DBQ.pop(t)) {
-            size_t move_offs = 0;
+            // size_t move_offs = 0;
             LineBuffer x;
             x.data = std::move(t);
             // x.newline_vec = std::vector<size_t>();
             x.newline_vec.push_back(-1);
             for (size_t i=0; i<x.data.size; i++) {
                 // clean '\r':
-                if (move_offs != 0) x.data.buf[i-move_offs] = x.data.buf[i];
+                // if (move_offs != 0) x.data.buf[i-move_offs] = x.data.buf[i];
                 // check '\n':
-                if (x.data.buf[i-move_offs] == '\n') x.newline_vec.push_back(i-move_offs); //, line_cnt++;
+                // if (x.data.buf[i-move_offs] == '\n') x.newline_vec.push_back(i-move_offs); //, line_cnt++;
+                if (x.data.buf[i] == '\n') x.newline_vec.push_back(i);
                 // check '\r':
-                if (x.data.buf[i] == '\r') move_offs++;
+                // if (x.data.buf[i] == '\r') move_offs++;
             }
             _LBQ.wait_push(x, _max_queue_size);
             // push_cnt++;
@@ -123,6 +124,7 @@ private:
                 if (line_flag == 1) {
                     if (start_from_buffer) {
                         read.len = last_line_buffer.size() + t.newline_vec[i];
+                        if (t.newline_vec[i]-1>0 && t.data.buf[t.newline_vec[i]-1]=='\t') read.len--;
                         read.read = new char [read.len];
                         memcpy(read.read, last_line_buffer.c_str(), last_line_buffer.size());
                         memcpy(read.read + last_line_buffer.size(), t.data.buf, t.newline_vec[i]);
@@ -130,6 +132,7 @@ private:
                         start_from_buffer = false;
                     } else {
                         read.len = t.newline_vec[i] - (t.newline_vec[i-1] + 1);
+                        if (t.newline_vec[i]-1>0 && t.data.buf[t.newline_vec[i]-1]=='\t') read.len--;
                         read.read = new char [read.len];
                         memcpy(read.read, &(t.data.buf[t.newline_vec[i-1] + 1]), read.len);
                     }

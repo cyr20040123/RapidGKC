@@ -202,7 +202,7 @@ void KmerCounting_TP(CUDAParams &gpars) {
     // );
     ReadLoader::work_while_loading(PAR.K_kmer,
         [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){phase1(reads, gpars, skm_part_vec, tid);},
-        PAR.N_threads, PAR.read_files, PAR.Batch_read_loading, 256*PAR.N_threads, PAR.Buffer_fread_size_MB);
+        PAR.N_threads, PAR.read_files, PAR.Batch_read_loading, 192*PAR.N_threads, PAR.Buffer_fread_size_MB);
     
     double p1_time = wct1.stop();
     logger->log("**** All reads loaded and SKMs generated (Phase 1 ends) ****", Logger::LV_NOTICE);

@@ -3,6 +3,7 @@
 
 // #define DEBUG
 
+#include <algorithm>
 #include <future>
 #include <thread>
 #include <functional>
@@ -23,7 +24,7 @@ struct DataBuffer {
 struct LineBuffer {
     DataBuffer data;
     std::vector<size_t> newline_vec;
-    std::vector<size_t> newline_vec2;
+    /* std::vector<size_t> newline_vec2;*/
 };
 
 class ReadLoader {
@@ -81,13 +82,14 @@ private:
             LineBuffer x;
             x.data = std::move(t);
             x.newline_vec.reserve((t.size>>11)+8);
+            x.newline_vec.push_back(-1);
+            /*
             x.newline_vec2.reserve((t.size>>11)+8);
             // x.newline_vec = std::vector<size_t>();
             std::future<void> fu = std::async(std::launch::async, [&x](){
                 for (int i=x.data.size/2; i<x.data.size; i++)
                     if (x.data.buf[i] == '\n') x.newline_vec2.push_back(i);
             });
-            x.newline_vec.push_back(-1);
             for (size_t i=0; i<x.data.size/2; i++) {
                 // clean '\r':
                 // if (move_offs != 0) x.data.buf[i-move_offs] = x.data.buf[i];
@@ -98,6 +100,14 @@ private:
                 // if (x.data.buf[i] == '\r') move_offs++;
             }
             fu.get();
+            */
+            char *find_beg = x.data.buf;
+            while (true) {
+                find_beg = std::find(find_beg, x.data.buf+x.data.size, '\n');
+                if (find_beg == x.data.buf+x.data.size) break;
+                x.newline_vec.push_back(find_beg - x.data.buf);
+                find_beg++;
+            }
             _LBQ.wait_push(x, _max_queue_size);
             // push_cnt++;
         }
@@ -125,8 +135,8 @@ private:
                 line_flag = 0;
                 continue;
             }
-            t.newline_vec.reserve(t.newline_vec.size() + t.newline_vec2.size());
-            t.newline_vec.insert(t.newline_vec.end(), t.newline_vec2.begin(), t.newline_vec2.end());
+            /* t.newline_vec.reserve(t.newline_vec.size() + t.newline_vec2.size());
+            t.newline_vec.insert(t.newline_vec.end(), t.newline_vec2.begin(), t.newline_vec2.end()); */
             for (i = 1; i < t.newline_vec.size(); i++, line_flag=(line_flag+1) & flag_mask) { // begins from 1 because q[0]=-1
                 if (line_flag == 1) {
                     if (start_from_buffer) {

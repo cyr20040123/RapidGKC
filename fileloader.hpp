@@ -83,6 +83,7 @@ private:
     void _STEP1_load_from_file () {
         // char *buf = new char [_buffer_size];//
         size_t cur_size;
+        char tmp;
         for (std::string &filename: _filenames) {
             int fd = open(filename.c_str(), O_RDONLY);
             struct stat statue;
@@ -93,7 +94,7 @@ private:
                 DataBuffer t;
                 t.buf = fileptr + i;
                 t.size = statue.st_size - i < _buffer_size ? statue.st_size - i : _buffer_size;
-                _DBQ.wait_push(t, _max_queue_size);
+                if (_DBQ.wait_push(t, _max_queue_size)) tmp = *t.buf; // help to prefetch
             }
             
             DataBuffer t;

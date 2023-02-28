@@ -3,6 +3,7 @@
 
 // #define DEBUG
 
+#include <future>
 #include <thread>
 #include <functional>
 #include <vector>
@@ -22,11 +23,8 @@ struct DataBuffer {
 struct LineBuffer {
     DataBuffer data;
     std::vector<size_t> newline_vec;
+    std::vector<size_t> newline_vec2;
 };
-// struct ReadPtr {
-//     char* read;
-//     T_read_len len;
-// };
 
 class ReadLoader {
 private:
@@ -83,8 +81,12 @@ private:
             LineBuffer x;
             x.data = std::move(t);
             // x.newline_vec = std::vector<size_t>();
+            std::future<void> fu = std::async(std::launch::async, [&x](){
+                for (int i=x.data.size/2; i<x.data.size; i++)
+                    if (x.data.buf[i] == '\n') x.newline_vec2.push_back(i);
+            });
             x.newline_vec.push_back(-1);
-            for (size_t i=0; i<x.data.size; i++) {
+            for (size_t i=0; i<x.data.size/2; i++) {
                 // clean '\r':
                 // if (move_offs != 0) x.data.buf[i-move_offs] = x.data.buf[i];
                 // check '\n':
@@ -93,6 +95,7 @@ private:
                 // check '\r':
                 // if (x.data.buf[i] == '\r') move_offs++;
             }
+            fu.get();
             _LBQ.wait_push(x, _max_queue_size);
             // push_cnt++;
         }
@@ -120,6 +123,7 @@ private:
                 line_flag = 0;
                 continue;
             }
+            t.newline_vec.insert(t.newline_vec.end(), t.newline_vec2.begin(), t.newline_vec2.end());
             for (i = 1; i < t.newline_vec.size(); i++, line_flag=(line_flag+1) & flag_mask) { // begins from 1 because q[0]=-1
                 if (line_flag == 1) {
                     if (start_from_buffer) {
@@ -160,12 +164,13 @@ public:
     static const size_t KB = 1024;
     ReadLoader (std::vector<std::string> filenames, T_read_len min_read_len = 0, size_t read_batch_size = 8192, int buffer_size_MB = 16, int max_buffer_size_MB = 1024, int n_threads_consumer = 16) {
         _filenames = filenames;
+        _is_fasta = *(filenames[0].rbegin()) == 'a' || *(filenames[0].rbegin()) == 'A';
+        if (_is_fasta) max_buffer_size_MB /= 2; // for fasta, the buffer size required should be 1/2 smaller.
         _min_read_len = min_read_len;
         _read_batch_size = read_batch_size;
         _max_queue_size = max_buffer_size_MB / buffer_size_MB / 2;
         _buffer_size = buffer_size_MB * MB;
         _n_threads_consumer = n_threads_consumer;
-        _is_fasta = *(filenames[0].rbegin()) == 'a' || *(filenames[0].rbegin()) == 'A';
         std::cout<<(_is_fasta?"Fasta format.":"Fastq format.")<<std::endl;
     }
     void start_load_reads() {
@@ -204,7 +209,7 @@ public:
         
         T_read_len n_read_loaded = 0;
 
-        ThreadPool<void> tp(worker_threads, worker_threads+4);
+        ThreadPool<void> tp(worker_threads, worker_threads + worker_threads/4 > 2 ? worker_threads/4 : 2);
         ReadLoader rl(filenames, K_kmer, batch_size, buffer_size_MB, max_buffer_size_MB, worker_threads);
         rl.start_load_reads();
 

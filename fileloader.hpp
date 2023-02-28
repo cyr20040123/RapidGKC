@@ -37,6 +37,7 @@ private:
     bool _is_fasta;
     
     size_t _read_batch_size;
+    T_read_len _min_read_len;
     
     size_t _buffer_size;
     size_t _max_queue_size;
@@ -129,7 +130,7 @@ private:
                         read.read = new char [read.len];
                         memcpy(read.read, &(t.data.buf[t.newline_vec[i-1] + 1]), read.len);
                     }
-                    batch_reads.push_back(read);
+                    if (read.len >= _min_read_len) batch_reads.push_back(read);
                     if (batch_reads.size() >= _read_batch_size) {
                         _RBQ.wait_push(batch_reads, _n_threads_consumer + 2);
                         batch_reads = std::vector<ReadPtr>();
@@ -151,8 +152,9 @@ private:
 public:
     static const size_t MB = 1048576;
     static const size_t KB = 1024;
-    ReadLoader (std::vector<std::string> filenames, size_t read_batch_size = 8192, int buffer_size_MB = 16, int max_buffer_size_MB = 1024, int n_threads_consumer = 16) {
+    ReadLoader (std::vector<std::string> filenames, T_read_len min_read_len = 0, size_t read_batch_size = 8192, int buffer_size_MB = 16, int max_buffer_size_MB = 1024, int n_threads_consumer = 16) {
         _filenames = filenames;
+        _min_read_len = min_read_len;
         _read_batch_size = read_batch_size;
         _max_queue_size = max_buffer_size_MB / buffer_size_MB / 2;
         _buffer_size = buffer_size_MB * MB;
@@ -197,7 +199,7 @@ public:
         T_read_len n_read_loaded = 0;
 
         ThreadPool<void> tp(worker_threads, worker_threads+2);
-        ReadLoader rl(filenames, batch_size, buffer_size_MB, max_buffer_size_MB, worker_threads);
+        ReadLoader rl(filenames, K_kmer, batch_size, buffer_size_MB, max_buffer_size_MB, worker_threads);
         rl.start_load_reads();
 
         std::vector<ReadPtr> read_batch;
@@ -226,7 +228,7 @@ public:
 #ifdef DEBUG
 int main() {
     std::vector<std::string> filenames {"/mnt/f/study/bio_dataset/hg002pacbio/man_files/SRR8858432.man.fasta"};
-    ReadLoader rl(filenames, 8192, 16, 512, 1);
+    ReadLoader rl(filenames, 0, 8192, 16, 512, 1);
     size_t s = 0;
     rl.debug_load_reads_with_worker([&s](std::vector<ReadPtr>& batch_reads, int tid){
         for(auto &i:batch_reads) {

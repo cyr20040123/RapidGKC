@@ -1,3 +1,6 @@
+#ifndef _CONCQUEUE_HPP
+#define _CONCQUEUE_HPP
+
 #define WAITMEASURE
 
 #include <mutex>
@@ -88,3 +91,5 @@ public:
         return _size;
     }
 };
+
+#endif

@@ -64,6 +64,9 @@ private:
             std::cout<<filename<<" closed: "<<fclose(fp)<<std::endl;
             DataBuffer t;
             t.size = 0;
+            #ifdef WAITMEASURE
+            output_wait();
+            #endif
             _DBQ.push(t); // push a null block when file ends
             // push_cnt++;
         }
@@ -188,9 +191,9 @@ public:
     #endif
     #ifdef WAITMEASURE
     void output_wait () {
-        std::cout<<"1 Load    wait count: "<<_DBQ.debug_push_wait<<std::endl;
-        std::cout<<"2 Newline wait count: "<<_LBQ.debug_push_wait<<std::endl;
-        std::cout<<"3 Extract wait count: "<<_RBQ.debug_push_wait<<std::endl;
+        std::cout<<"1 Load    push wait: "<<_DBQ.debug_push_wait<<"\tpop wait: "<<_DBQ.debug_pop_wait<<std::endl;
+        std::cout<<"2 Newline push wait: "<<_LBQ.debug_push_wait<<"\tpop wait: "<<_LBQ.debug_pop_wait<<std::endl;
+        std::cout<<"3 Extract push wait: "<<_RBQ.debug_push_wait<<"\tpop wait: "<<_RBQ.debug_pop_wait<<std::endl;
     }
     #endif
     static void work_while_loading (T_kvalue K_kmer, std::function<void(std::vector<ReadPtr>&, int)> work_func, int worker_threads, std::vector<std::string> &filenames, 
@@ -198,7 +201,7 @@ public:
         
         T_read_len n_read_loaded = 0;
 
-        ThreadPool<void> tp(worker_threads, worker_threads+2);
+        ThreadPool<void> tp(worker_threads, worker_threads+4);
         ReadLoader rl(filenames, K_kmer, batch_size, buffer_size_MB, max_buffer_size_MB, worker_threads);
         rl.start_load_reads();
 
@@ -219,9 +222,9 @@ public:
         std::cerr<<"Total reads loaded: "<<n_read_loaded<<std::endl;
         rl.join_threads();
         tp.finish();
-        #ifdef WAITMEASURE
-        rl.output_wait();
-        #endif
+        // #ifdef WAITMEASURE
+        // rl.output_wait();
+        // #endif
     }
 };
 

@@ -83,7 +83,7 @@ void phase1(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMStoreNoncon*> &
 }
 
 size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, vector<T_kmc> *kmc_result) {
-    cout<<"o";
+    cerr<<"o";
     size_t res = 0;
     // if (tid / gpars.max_threads_per_gpu >= gpars.n_devices) {
     if ((!PAR.GPU_only) && (PAR.CPU_only || tid >= gpars.n_devices * gpars.max_threads_per_gpu)) {
@@ -97,7 +97,7 @@ size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, ve
     return res;
 }
 size_t phase2_forceCPU (int tid, SKMStoreNoncon* skm_store, vector<T_kmc> *kmc_result) {
-    cout<<"o";
+    cerr<<"o";
     return KmerCountingCPU(PAR.K_kmer, skm_store, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[skm_store->id], tid);
 }
 /*
@@ -202,7 +202,7 @@ void KmerCounting_TP(CUDAParams &gpars) {
     // );
     ReadLoader::work_while_loading(PAR.K_kmer,
         [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){phase1(reads, gpars, skm_part_vec, tid);},
-        PAR.N_threads, PAR.read_files, PAR.Batch_read_loading, 128*PAR.N_threads, PAR.Buffer_fread_size_MB);
+        PAR.N_threads, PAR.read_files, PAR.Batch_read_loading, 256*PAR.N_threads, PAR.Buffer_fread_size_MB);
     
     double p1_time = wct1.stop();
     logger->log("**** All reads loaded and SKMs generated (Phase 1 ends) ****", Logger::LV_NOTICE);

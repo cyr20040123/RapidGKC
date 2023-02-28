@@ -209,7 +209,7 @@ public:
         
         T_read_len n_read_loaded = 0;
 
-        ThreadPool<void> tp(worker_threads, worker_threads + worker_threads/4 > 2 ? worker_threads/4 : 2);
+        ThreadPool<void> tp(worker_threads, worker_threads + worker_threads/2 > 2 ? worker_threads/4 : 2);
         ReadLoader rl(filenames, K_kmer, batch_size, buffer_size_MB, max_buffer_size_MB, worker_threads);
         rl.start_load_reads();
 

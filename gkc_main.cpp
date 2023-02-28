@@ -5,7 +5,8 @@
 #include <chrono>
 #include <algorithm>
 #include <bits/stdc++.h>
-#include "read_loader_V2.hpp"
+// #include "read_loader_V2.hpp"
+#include "fileloader.hpp"
 #include "cpu_funcs.h"
 #include "gpu_skmgen.h"
 #include "gpu_kmercounting.h"
@@ -65,6 +66,20 @@ void process_reads_count(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMSt
     // };
     GenSuperkmerGPU (pinned_reads, PAR.K_kmer, PAR.P_minimizer, false, gpars, CountTask::SKMPartition, PAR.SKM_partitions, skm_partition_stores, tid);
     // gpars.gpuworker_threads --;//
+}
+
+void phase1(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMStoreNoncon*> &skm_partition_stores, int tid) {
+    if ((!PAR.GPU_only) && (PAR.CPU_only || tid / gpars.max_threads_per_gpu >= gpars.n_devices)) {
+        // call CPU splitter
+        GenSuperkmerCPU (reads, PAR.K_kmer, PAR.P_minimizer, false, PAR.SKM_partitions, skm_partition_stores, tid);
+    } else { // use GPU splitter
+        sort(reads.begin(), reads.end(), sort_comp); // TODO: remove and compare the performance
+        PinnedCSR pinned_reads(reads);
+        stringstream ss;
+        ss << "-- BATCH  GPU: #reads: " << reads.size() << "\tmin_len = " << reads.begin()->len << "\tmax_len = " << reads.rbegin()->len <<"\tsize = " << pinned_reads.size_capacity << "\t--";
+        logger->log(ss.str());
+        GenSuperkmerGPU (pinned_reads, PAR.K_kmer, PAR.P_minimizer, false, gpars, CountTask::SKMPartition, PAR.SKM_partitions, skm_partition_stores, tid);
+    }
 }
 
 size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, vector<T_kmc> *kmc_result) {
@@ -180,11 +195,14 @@ void KmerCounting_TP(CUDAParams &gpars) {
     //     );
     //     logger->log(to_string(wct_tmp.stop())+"---- ["+readfile+"] processed ----\n", Logger::LV_NOTICE);
     // }
-    WallClockTimer wct_tmp;
-    ReadLoader::work_while_loading_V2(PAR.K_kmer,
-        [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){process_reads_count(reads, gpars, skm_part_vec, tid);},
-        PAR.RD_threads_min, PAR.N_threads, PAR.read_files, PAR.Batch_read_loading, true, PAR.Buffer_fread_size_MB*ReadLoader::MB
-    );
+
+    // ReadLoader::work_while_loading_V2(PAR.K_kmer,
+    //     [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){process_reads_count(reads, gpars, skm_part_vec, tid);},
+    //     PAR.RD_threads_min, PAR.N_threads, PAR.read_files, PAR.Batch_read_loading, true, PAR.Buffer_fread_size_MB*ReadLoader::MB
+    // );
+    ReadLoader::work_while_loading(PAR.K_kmer,
+        [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){phase1(reads, gpars, skm_part_vec, tid);},
+        PAR.N_threads, PAR.read_files, PAR.Batch_read_loading, 128*PAR.N_threads, PAR.Buffer_fread_size_MB);
     
     double p1_time = wct1.stop();
     logger->log("**** All reads loaded and SKMs generated (Phase 1 ends) ****", Logger::LV_NOTICE);

@@ -24,7 +24,7 @@ typedef unsigned char T_kvalue;
 // typedef unsigned short T_spvalue;
 
 struct ReadPtr {
-    const char* read;
+    char* read; // const char * for read_loader_V2.hpp, char* for fileloader.hpp
     T_read_len len;
 };
 

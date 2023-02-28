@@ -161,7 +161,6 @@ public:
     bool HPC = false;           // homopolymer compression assembly
     // int Kmer_filter = 25;       // percentage
     int N_threads = 4;          // threads per process
-    int RD_threads_min = 2;
     // string tmp_file_folder = "./tmp/";
     std::string tmp_file_folder = "/home/cyr/tmp/";
     bool to_file = true;
@@ -170,7 +169,7 @@ public:
     std::vector<std::string> read_files;
     
     T_read_cnt Batch_read_loading = 2000;
-    size_t Buffer_fread_size_MB = 12;
+    size_t Buffer_size_MB = 256;
 
     int grid_size = 8;
     int block_size = 256;
@@ -190,7 +189,7 @@ public:
     void ArgParser(int argc, char* argvs[]) {
         for (int i=1; i<argc-1; i++) {
             if (!strcmp(argvs[i], "-t")) N_threads = atoi(argvs[++i]);
-            else if (!strcmp(argvs[i], "-rdt")) RD_threads_min = atoi(argvs[++i]);
+            // else if (!strcmp(argvs[i], "-rdt")) RD_threads_min = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-k")) K_kmer = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-p")) P_minimizer = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-skm")) SKM_partitions = atoi(argvs[++i]);
@@ -200,7 +199,7 @@ public:
             else if (!strcmp(argvs[i], "-im")) to_file = false;
             else if (!strcmp(argvs[i], "-log")) log_file_folder = std::string(argvs[++i]);
             else if (!strcmp(argvs[i], "-lv")) log_lv = atoi(argvs[++i]);
-            else if (!strcmp(argvs[i], "-fb")) Buffer_fread_size_MB = atoi(argvs[++i]);
+            else if (!strcmp(argvs[i], "-fb")) Buffer_size_MB = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-rb")) Batch_read_loading = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-grid")) grid_size = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-block")) block_size = atoi(argvs[++i]);

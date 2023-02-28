@@ -123,6 +123,7 @@ private:
                 line_flag = 0;
                 continue;
             }
+            t.newline_vec.reserve(t.newline_vec.size() + t.newline_vec2.size());
             t.newline_vec.insert(t.newline_vec.end(), t.newline_vec2.begin(), t.newline_vec2.end());
             for (i = 1; i < t.newline_vec.size(); i++, line_flag=(line_flag+1) & flag_mask) { // begins from 1 because q[0]=-1
                 if (line_flag == 1) {

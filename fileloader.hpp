@@ -29,7 +29,7 @@ struct DataBuffer {
 };
 struct LineBuffer {
     DataBuffer data;
-    std::vector<size_t> newline_vec;
+    std::vector<char*> newline_vec;
     /* std::vector<size_t> newline_vec2;*/
 };
 
@@ -86,6 +86,8 @@ private:
         char tmp;
         for (std::string &filename: _filenames) {
             int fd = open(filename.c_str(), O_RDONLY);
+            std::cerr<<"Open file ["<<filename<<"]: "<<fd<<std::endl;
+            assert(fd != -1);
             struct stat statue;
             fstat(fd, &statue);
             char *fileptr = (char *) mmap(NULL, statue.st_size, PROT_READ, MAP_SHARED, fd, 0); // MAP_SHARED
@@ -94,7 +96,8 @@ private:
                 DataBuffer t;
                 t.buf = fileptr + i;
                 t.size = statue.st_size - i < _buffer_size ? statue.st_size - i : _buffer_size;
-                if (_DBQ.wait_push(t, _max_queue_size)) tmp = *t.buf; // help to prefetch
+                _DBQ.wait_push(t, _max_queue_size);
+                tmp = *t.buf; // help to prefetch
             }
             
             DataBuffer t;
@@ -118,7 +121,8 @@ private:
             LineBuffer x;
             x.data = std::move(t);
             x.newline_vec.reserve((t.size>>11)+8);
-            x.newline_vec.push_back(-1);
+            // x.newline_vec.push_back(-1);
+            x.newline_vec.push_back(x.data.buf-1);
             /*
             x.newline_vec2.reserve((t.size>>11)+8);
             // x.newline_vec = std::vector<size_t>();
@@ -137,12 +141,12 @@ private:
             }
             fu.get();
             */
-            char *find_beg = x.data.buf;
+            char *find_beg = x.data.buf-1;
             while (true) {
-                find_beg = std::find(find_beg, x.data.buf+x.data.size, '\n');
+                find_beg = std::find(find_beg+1, x.data.buf+x.data.size, '\n');
                 if (find_beg == x.data.buf+x.data.size) break;
-                x.newline_vec.push_back(find_beg - x.data.buf);
-                find_beg++;
+                // x.newline_vec.push_back(find_beg - x.data.buf);
+                x.newline_vec.push_back(find_beg);
             }
             _LBQ.wait_push(x, _max_queue_size);
             // push_cnt++;
@@ -178,21 +182,26 @@ private:
             }
             /* t.newline_vec.reserve(t.newline_vec.size() + t.newline_vec2.size());
             t.newline_vec.insert(t.newline_vec.end(), t.newline_vec2.begin(), t.newline_vec2.end()); */
-            for (i = 1; i < t.newline_vec.size(); i++, line_flag=(line_flag+1) & flag_mask) { // begins from 1 because q[0]=-1
+            // for (i = 1; i < t.newline_vec.size(); i++, line_flag=(line_flag+1) & flag_mask) { // begins from 1 because q[0]=-1
+            for(std::vector<char*>::iterator it = t.newline_vec.begin()+1; it != t.newline_vec.end(); it++, line_flag=(line_flag+1) & flag_mask) {
                 if (line_flag == 1) {
                     if (start_from_buffer) {
-                        read.len = last_line_buffer.size() + t.newline_vec[i];
-                        if (t.newline_vec[i]-1>0 && t.data.buf[t.newline_vec[i]-1]=='\t') read.len--;
+                        read.len = last_line_buffer.size() + *it - *(it-1) - 1;// t.newline_vec[i];
+                        // if (t.newline_vec[i]-1>0 && t.data.buf[t.newline_vec[i]-1]=='\t') read.len--;
+                        if ((*it-1) > (*t.newline_vec.begin()) && *(*it-1) == '\t') read.len--;
                         read.read = new char [read.len];
                         memcpy(read.read, last_line_buffer.c_str(), last_line_buffer.size());
-                        memcpy(read.read + last_line_buffer.size(), t.data.buf, t.newline_vec[i]);
+                        memcpy(read.read + last_line_buffer.size(), t.data.buf, read.len - last_line_buffer.size());
                         last_line_buffer = "";
                         start_from_buffer = false;
                     } else {
-                        read.len = t.newline_vec[i] - (t.newline_vec[i-1] + 1);
-                        if (t.newline_vec[i]-1>0 && t.data.buf[t.newline_vec[i]-1]=='\t') read.len--;
+                        // read.len = t.newline_vec[i] - (t.newline_vec[i-1] + 1);
+                        read.len = *it - *(it-1) - 1;
+                        // if (t.newline_vec[i]-1>0 && t.data.buf[t.newline_vec[i]-1]=='\t') read.len--;
+                        if ((*it-1) > (*t.newline_vec.begin()) && *(*it-1) == '\t') read.len--;
                         read.read = new char [read.len];
-                        memcpy(read.read, &(t.data.buf[t.newline_vec[i-1] + 1]), read.len);
+                        // memcpy(read.read, &(t.data.buf[t.newline_vec[i-1] + 1]), read.len);
+                        memcpy(read.read, *(it-1)+1, read.len);
                     }
                     if (read.len >= _min_read_len) batch_reads.push_back(read);
                     if (batch_reads.size() >= _read_batch_size) {
@@ -203,9 +212,11 @@ private:
                     // push_cnt++;
                 }
             }
-            if (line_flag == 1 && *t.newline_vec.rbegin() != t.data.size) { // prepare last line buffer
+            // if (line_flag == 1 && *t.newline_vec.rbegin() < t.data.size - 1) { // prepare last line buffer
+            if (line_flag == 1 && *t.newline_vec.rbegin() - *t.newline_vec.begin() < t.data.size) {
                 start_from_buffer = true;
-                last_line_buffer = std::string(&t.data.buf[*t.newline_vec.rbegin()+1], t.data.size - *t.newline_vec.rbegin() - 1);
+                // last_line_buffer = std::string(&t.data.buf[*t.newline_vec.rbegin()+1], t.data.size - *t.newline_vec.rbegin() - 1);
+                last_line_buffer = std::string((*t.newline_vec.rbegin())+1, t.data.size - (*t.newline_vec.rbegin() - *t.newline_vec.begin() - 1) - 1);
             }
             // delete t.data.buf; // malloc in _STEP1_load_from_file
         }

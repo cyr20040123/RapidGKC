@@ -42,14 +42,13 @@ public:
         else _cv.notify_one();
         _size = _Q.size();
     }
-    bool wait_push (T &item, size_t size_thr) {
+    void wait_push (T &item, size_t size_thr) {
         std::unique_lock<std::mutex> lck(_mtx);
         #ifdef WAITMEASURE
         // if (!_cv.wait_for(lck, 200ms, [this, size_thr](){return this->_size < size_thr;})) // true: finish waiting, false: timeout
         //     debug_push_wait++;
-        bool res = false;
-        _cv.wait_for(lck, 500ms, [this, size_thr, &res]() {
-            if (this->_size >= size_thr) {debug_push_wait++; res=true; return false;}
+        _cv.wait_for(lck, 200ms, [this, size_thr]() {
+            if (this->_size >= size_thr) {this->debug_push_wait++; return false;}
             else return true;
         });
         #else
@@ -59,7 +58,6 @@ public:
         if (_external_wait) _cv.notify_all(); // all for both pop and newlinepos consumer
         else _cv.notify_one();
         _size = _Q.size();
-        return res;
     }
     std::deque<T>& native_handle() { // remember to lock before using
         return _Q;

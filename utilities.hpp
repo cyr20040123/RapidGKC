@@ -180,6 +180,7 @@ public:
     int n_streams_phase2 = 2;
     int reads_per_stream_mul = 1;
     int max_threads_per_gpu = 2;
+    int reserved_thread_p2 = 0;
     bool CPU_only = false;
     bool GPU_only = false;
     bool check_VRAM = false;
@@ -210,6 +211,7 @@ public:
             else if (!strcmp(argvs[i], "-ns2")) n_streams_phase2 = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-rps")) reads_per_stream_mul = atoi(argvs[++i]); // if short reads, set it to 2 or 4 to fully utilize gpu
             else if (!strcmp(argvs[i], "-tgpu")) max_threads_per_gpu = atoi(argvs[++i]);
+            else if (!strcmp(argvs[i], "-tr")) reserved_thread_p2 = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-cpuonly")) CPU_only = true;
             else if (!strcmp(argvs[i], "-gpuonly")) GPU_only = true;
             else if (!strcmp(argvs[i], "-checkvram")) check_VRAM = true;
@@ -237,6 +239,7 @@ public:
         assert (!(GPU_only && !n_devices));
         assert (!(GPU_only && CPU_only));
         assert (sizeof(size_t) == sizeof(unsigned long long));
+        assert (reserved_thread_p2 < N_threads);
     }
 } PAR;
 // ** Implementation **

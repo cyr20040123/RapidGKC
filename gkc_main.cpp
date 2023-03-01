@@ -180,13 +180,14 @@ void KmerCounting_TP(CUDAParams &gpars) {
 
     vector<SKMStoreNoncon*> skm_part_vec;
     int i, tid;
-    for (i=0; i<PAR.SKM_partitions; i++) skm_part_vec.push_back(new SKMStoreNoncon(i, PAR.to_file));// deleted in kmc_counting_GPU
     
     // ====================================================
     // ==== 1st phase: loading and generate superkmers ====
     // ====================================================
     logger->log("**** Phase 1: Loading and generate superkmers ****", Logger::LV_NOTICE);
     WallClockTimer wct1;
+    
+    for (i=0; i<PAR.SKM_partitions; i++) skm_part_vec.push_back(new SKMStoreNoncon(i, PAR.to_file));// deleted in kmc_counting_GPU
     
     // for (auto readfile:PAR.read_files) {
     //     WallClockTimer wct_tmp;
@@ -237,6 +238,7 @@ void KmerCounting_TP(CUDAParams &gpars) {
     
     vector<T_kmc> kmc_result[PAR.SKM_partitions];
     int max_streams = min((PAR.SKM_partitions+max(PAR.n_devices, PAR.N_threads)) / max(PAR.n_devices, PAR.N_threads), PAR.n_streams_phase2);
+    PAR.N_threads -= PAR.reserved_thread_p2;
     
     // todo: available gpu mem = GPU_VRAM // N_THREADS * N_GPUS, required: kmer_cnt * [8|16] * 3;
     /*
@@ -267,14 +269,14 @@ void KmerCounting_TP(CUDAParams &gpars) {
                 vram_avail -= skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) * 3;
             } else break;
         }
-        if (store_vec.size() == 0) { // if VRAM is not enough to handle even one partition, use CPU
+        if (store_vec.size() == 0) { // if VRAM is not enough to handle even one partition, force using CPU
             logger->log("Part "+to_string(j)+" is too large to be handled by GPU, use CPU...", Logger::LV_WARNING);
             SKMStoreNoncon *t = skm_part_vec[j];
             distinct_kmer_cnt[i] = tp.commit_task([t, &kmc_result](int tid){
                 return phase2_forceCPU (tid, t, kmc_result);
             });
             j++;
-        } else { // GPU work:
+        } else {
             distinct_kmer_cnt[i] = tp.commit_task([store_vec, &gpars, &kmc_result](int tid){
                 return phase2 (tid, store_vec, gpars, kmc_result);
             });

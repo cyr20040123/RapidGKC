@@ -87,7 +87,11 @@ private:
         for (std::string &filename: _filenames) {
             int fd = open(filename.c_str(), O_RDONLY);
             std::cerr<<"Open file ["<<filename<<"]: "<<fd<<std::endl;
-            assert(fd != -1);
+            if (fd == -1) {
+                std::cerr<<"Error "<<errno<<": ";
+                perror("");
+                exit(errno);
+            } // assert(fd != -1);
             struct stat statue;
             fstat(fd, &statue);
             char *fileptr = (char *) mmap(NULL, statue.st_size, PROT_READ, MAP_SHARED, fd, 0); // MAP_SHARED

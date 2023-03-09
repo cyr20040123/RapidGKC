@@ -34,6 +34,10 @@ public:
         if (millisecond) return std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
         else return std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.0;
     }
+    double get(bool millisecond = false) {
+        if (millisecond) return std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        else return std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.0;
+    }
     // Restart the clock start time.
     void restart() {
         start = std::chrono::high_resolution_clock::now();
@@ -175,12 +179,13 @@ public:
     int block_size = 256;
     int grid_size2 = 16;
     int block_size2 = 512;
+    int threads_cpu_sorter = 1;
     int n_devices = 1;
     int n_streams = 6;
     int n_streams_phase2 = 2;
     int reads_per_stream_mul = 1;
     int max_threads_per_gpu = 2;
-    int reserved_thread_p2 = 0;
+    int threads_p2 = 2;
     bool CPU_only = false;
     bool GPU_only = false;
     bool check_VRAM = false;
@@ -188,8 +193,12 @@ public:
     // bool GPU_compression = false;
 
     void ArgParser(int argc, char* argvs[]) {
+        // N_threads = std::thread::hardware_concurrency();
         for (int i=1; i<argc-1; i++) {
             if (!strcmp(argvs[i], "-t")) N_threads = atoi(argvs[++i]);
+            else if (!strcmp(argvs[i], "-tgpu")) max_threads_per_gpu = atoi(argvs[++i]);
+            else if (!strcmp(argvs[i], "-t2")) threads_p2 = atoi(argvs[++i]);
+            else if (!strcmp(argvs[i], "-tsort")) threads_cpu_sorter = atoi(argvs[++i]);
             // else if (!strcmp(argvs[i], "-rdt")) RD_threads_min = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-k")) K_kmer = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-p")) P_minimizer = atoi(argvs[++i]);
@@ -210,8 +219,6 @@ public:
             else if (!strcmp(argvs[i], "-ns1")) n_streams = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-ns2")) n_streams_phase2 = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-rps")) reads_per_stream_mul = atoi(argvs[++i]); // if short reads, set it to 2 or 4 to fully utilize gpu
-            else if (!strcmp(argvs[i], "-tgpu")) max_threads_per_gpu = atoi(argvs[++i]);
-            else if (!strcmp(argvs[i], "-tr")) reserved_thread_p2 = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-cpuonly")) CPU_only = true;
             else if (!strcmp(argvs[i], "-gpuonly")) GPU_only = true;
             else if (!strcmp(argvs[i], "-checkvram")) check_VRAM = true;
@@ -239,7 +246,6 @@ public:
         assert (!(GPU_only && !n_devices));
         assert (!(GPU_only && CPU_only));
         assert (sizeof(size_t) == sizeof(unsigned long long));
-        assert (reserved_thread_p2 < N_threads);
     }
 } PAR;
 // ** Implementation **

@@ -1,7 +1,7 @@
 #ifndef _FILELOADER_HPP
 #define _FILELOADER_HPP
 
-// #define DEBUG
+// #define USEMMAP
 
 #include <algorithm>
 #include <future>
@@ -13,10 +13,12 @@
 #include "types.h"
 #include "thread_pool.hpp"
 
+#ifdef USEMMAP
 #include <fcntl.h>      // open
 #include <sys/mman.h>   // mmap
 #include <sys/stat.h>   // fstat
 #include <unistd.h>     // close
+#endif
 
 #ifdef DEBUG
 #include <cassert>
@@ -25,12 +27,14 @@
 struct DataBuffer {
     char *buf;
     size_t size;
+    #ifdef USEMMAP
     int closefd = -1;
+    #endif
 };
 struct LineBuffer {
     DataBuffer data;
     std::vector<char*> newline_vec;
-    /* std::vector<size_t> newline_vec2;*/
+    /* std::vector<char*> newline_vec2;*/
 };
 
 class ReadLoader {
@@ -51,57 +55,30 @@ private:
 
     std::vector<std::thread> _started_threads;
     
-    void _STEP1_load_from_file_old () {
-        // size_t push_cnt = 0;
-
-        char *buf = new char [_buffer_size];//
-        size_t cur_size;
-        for (std::string &filename: _filenames) {
-            FILE *fp = fopen(filename.c_str(), "rb");
-            while ((cur_size = fread(buf, 1, _buffer_size, fp)) > 0) {
-                DataBuffer t;
-                t.buf = buf;
-                t.size = cur_size;
-                _DBQ.wait_push(t, _max_queue_size);
-                // push_cnt++;
-                buf = new char [_buffer_size]; // deleted in _STEP3_extract_read
-            }
-            std::cout<<filename<<" closed: "<<fclose(fp)<<std::endl;
-            DataBuffer t;
-            t.size = 0;
-            #ifdef WAITMEASURE
-            output_wait();
-            #endif
-            _DBQ.push(t); // push a null block when file ends
-            // push_cnt++;
-        }
-        _DBQ.finish();
-        std::cout<<"Loader finish 1 "/*<<push_cnt*/<<std::endl;
-        delete buf;//
-    }
-    
+    #ifdef USEMMAP
     void _STEP1_load_from_file () {
         // char *buf = new char [_buffer_size];//
         size_t cur_size;
         char tmp;
         for (std::string &filename: _filenames) {
             int fd = open(filename.c_str(), O_RDONLY);
-            std::cerr<<"Open file ["<<filename<<"]: "<<fd<<std::endl;
             if (fd == -1) {
-                std::cerr<<"Error "<<errno<<": ";
+                std::cerr<<"Error when open "<<filename<<" ["<<errno<<"]: ";
                 perror("");
                 exit(errno);
             } // assert(fd != -1);
             struct stat statue;
             fstat(fd, &statue);
+            std::cerr<<"Open file ["<<filename<<"]: "<<fd<<" "<<"filesize = "<<statue.st_size<<std::endl;
             char *fileptr = (char *) mmap(NULL, statue.st_size, PROT_READ, MAP_SHARED, fd, 0); // MAP_SHARED
+            close(fd);
 
             for (size_t i=0; i<statue.st_size; i+=_buffer_size) {
                 DataBuffer t;
                 t.buf = fileptr + i;
                 t.size = statue.st_size - i < _buffer_size ? statue.st_size - i : _buffer_size;
                 _DBQ.wait_push(t, _max_queue_size);
-                tmp = *t.buf; // help to prefetch
+                // tmp = *t.buf; // help to prefetch
             }
             
             DataBuffer t;
@@ -116,6 +93,36 @@ private:
         _DBQ.finish();
         std::cout<<"Loader finish 1 "/*<<push_cnt*/<<std::endl;
     }
+    #else
+    void _STEP1_load_from_file () { // NOT MMAP
+        char *buf = new char [_buffer_size];//
+        size_t cur_size;
+        char tmp;
+        for (std::string &filename: _filenames) {
+            FILE *fp = fopen(filename.c_str(), "rb");
+            std::cerr<<"Open file ["<<filename<<"]: "<<fp<<std::endl;
+            while (true) {
+                DataBuffer t;
+                t.size = fread(buf, 1, _buffer_size, fp);
+                if (t.size == 0) break;
+                t.buf = buf;
+                buf = new char[_buffer_size];
+                _DBQ.wait_push(t, _max_queue_size);
+            }
+            DataBuffer t;
+            t.size = 0;
+            t.buf = nullptr;
+            #ifdef WAITMEASURE
+            output_wait();
+            #endif
+            _DBQ.push(t); // push a null block when file ends
+            std::cerr<<"           "<<filename<<"  closed: "<<fclose(fp)<<std::endl;
+        }
+        _DBQ.finish();
+        std::cout<<"Loader finish 1 "/*<<push_cnt*/<<std::endl;
+    }
+    #endif
+    #ifdef USEMMAP
     void _STEP2_find_newline () {
         // size_t push_cnt = 0;
         // size_t line_cnt = 0;
@@ -158,6 +165,26 @@ private:
         _LBQ.finish();
         std::cout<<"Loader finish 2 "<</*push_cnt<<" "<<line_cnt<<*/std::endl;
     }
+    #else
+    void _STEP2_find_newline () { // NOT MMAP
+        DataBuffer t;
+        while (_DBQ.pop(t)) {
+            LineBuffer x;
+            x.data = std::move(t);
+            x.newline_vec.reserve((t.size>>10)+8);
+            x.newline_vec.push_back(x.data.buf-1);
+            char *find_beg = x.data.buf-1;
+            while (true) {
+                find_beg = std::find(find_beg+1, x.data.buf+x.data.size, '\n');
+                if (find_beg == x.data.buf+x.data.size) break;
+                x.newline_vec.push_back(find_beg);
+            }
+            _LBQ.wait_push(x, _max_queue_size);
+        }
+        _LBQ.finish();
+        std::cout<<"Loader finish 2 "<</*push_cnt<<" "<<line_cnt<<*/std::endl;
+    }
+    #endif
     void _STEP3_extract_read () {
         // size_t push_cnt = 0, pop_cnt = 0, line_cnt = 0;;
         
@@ -175,15 +202,18 @@ private:
         while (_LBQ.pop(t)) {
             // pop_cnt++;
             // line_cnt+=t.newline_vec.size();
-            // if (t.data.size==0) { // new file
-            //     line_flag = 0;
-            //     continue;
-            // }
-            if (t.data.closefd!=-1) { // new file
-                std::cerr<<"File closed: "<<munmap(t.data.buf, t.data.size)<<close(t.data.closefd)<<", size: "<<t.data.size<<std::endl;
+            #ifdef USEMMAP
+            if (t.data.closefd!=-1) { // new file // MMAP
+                std::cerr<<"File closed: "<<munmap(t.data.buf, t.data.size)<</*close(t.data.closefd)<<*/", size: "<<t.data.size<<std::endl;
                 line_flag = 0;
                 continue;
             }
+            #else
+            if (t.data.size==0) { // new file // NOT MMAP
+                line_flag = 0;
+                continue;
+            }
+            #endif
             /* t.newline_vec.reserve(t.newline_vec.size() + t.newline_vec2.size());
             t.newline_vec.insert(t.newline_vec.end(), t.newline_vec2.begin(), t.newline_vec2.end()); */
             // for (i = 1; i < t.newline_vec.size(); i++, line_flag=(line_flag+1) & flag_mask) { // begins from 1 because q[0]=-1
@@ -222,7 +252,9 @@ private:
                 // last_line_buffer = std::string(&t.data.buf[*t.newline_vec.rbegin()+1], t.data.size - *t.newline_vec.rbegin() - 1);
                 last_line_buffer = std::string((*t.newline_vec.rbegin())+1, t.data.size - (*t.newline_vec.rbegin() - *t.newline_vec.begin() - 1) - 1);
             }
-            // delete t.data.buf; // malloc in _STEP1_load_from_file
+            #ifndef USEMMAP
+            delete t.data.buf; // malloc in _STEP1_load_from_file // NOT MMAP
+            #endif
         }
         if (batch_reads.size()) _RBQ.push(batch_reads); // add last batch of reads
         _RBQ.finish();
@@ -278,12 +310,13 @@ public:
         
         T_read_len n_read_loaded = 0;
 
-        ThreadPool<void> tp(worker_threads, worker_threads + worker_threads/2 > 2 ? worker_threads/4 : 2);
+        ThreadPool<void> tp(worker_threads, worker_threads + (worker_threads >= 8 ? worker_threads / 4 : 2));
         ReadLoader rl(filenames, K_kmer, batch_size, buffer_size_MB, max_buffer_size_MB, worker_threads);
         rl.start_load_reads();
 
         std::vector<ReadPtr> read_batch;
         while (rl._RBQ.pop(read_batch)) {
+            // std::cerr<<rl._DBQ.size_est()<<" | "<<rl._LBQ.size_est()<<" | "<<rl._RBQ.size_est()<<std::endl;
             tp.hold_when_busy();
             //phase1(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMStoreNoncon*> &skm_partition_stores, int tid)
             n_read_loaded += read_batch.size();
@@ -297,11 +330,12 @@ public:
             });
         }
         std::cerr<<"Total reads loaded: "<<n_read_loaded<<std::endl;
+        
         rl.join_threads();
         tp.finish();
-        // #ifdef WAITMEASURE
-        // rl.output_wait();
-        // #endif
+        #ifdef WAITMEASURE
+        rl.output_wait();
+        #endif
     }
 };
 

@@ -3,6 +3,15 @@
 #include <cstring>
 #include <algorithm>
 
+/*
+#include <fcntl.h>      // open
+#include <sys/mman.h>   // mmap
+#include <sys/stat.h>   // fstat
+#include <unistd.h>     // close
+*/
+
+#include "use_raduls.h"
+
 using namespace std;
 
 const unsigned char basemap[256] = {
@@ -286,6 +295,7 @@ void GenSuperkmerCPU (vector<ReadPtr> &reads,
 /**
  * Phase 2: bucket (MSD radix + quick) sort for counting
 */
+#ifndef _USE_RADULS_H
 int _get_histogram (T_kmer *kmers, T_skm_partsize n_kmers, int right_shift, const T_kmer base_mask, const int NB, _out_ size_t *offs, bool _debug_output = false) {
     right_shift = right_shift > 0 ? right_shift : 0;
     // complexity: n+NB
@@ -374,6 +384,40 @@ void sort_kmers (T_kmer *kmers, const T_skm_partsize n_kmers, const T_kvalue K_k
     }
     return;
 }
+#else
+void sort_kmers (T_kmer *&kmers, const T_skm_partsize n_kmers, const T_kvalue K_kmer, uint8_t *&_raw_input, unsigned int n_threads = 1) {
+    uint32_t key_size = sizeof(T_kmer);
+    
+    // auto _raw_input = new uint8_t[n_kmers * sizeof(T_kmer) + raduls::ALIGNMENT];
+    // auto input = reinterpret_cast<T_kmer*>(kmers);
+    // // auto input = reinterpret_cast<T_kmer*>(_raw_input);
+    // while (reinterpret_cast<uintptr_t>(input) % raduls::ALIGNMENT) ++input;
+    
+    auto _raw_tmp = new uint8_t[n_kmers * sizeof(T_kmer) + raduls::ALIGNMENT];
+    auto tmp = reinterpret_cast<T_kmer*>(_raw_tmp);
+    while (reinterpret_cast<uintptr_t>(tmp) % raduls::ALIGNMENT) ++tmp;
+    // for (uint64_t i = 0; i < n_kmers; ++i)
+    //     input[i] = dis(gen) & (~0ull >> ((8 - key_size)*8));
+    // auto n_threads = std::thread::hardware_concurrency();
+    raduls::CleanTmpArray(reinterpret_cast<uint8_t*>(tmp), n_kmers, sizeof(T_kmer), n_threads);
+    raduls::RadixSortMSD(reinterpret_cast<uint8_t*>(kmers), reinterpret_cast<uint8_t*>(tmp), n_kmers, sizeof(T_kmer), key_size, n_threads);
+    if (key_size % 2 == 1) {
+        delete [] _raw_input;
+        kmers = tmp;
+        _raw_input = _raw_tmp;
+    } else {
+        delete [] _raw_tmp;
+    }
+    // auto result = key_size % 2 ? tmp : kmers;
+    //for (uint64_t i = 0; i < n_kmers; ++i)
+    //    std::cerr << result[i] << " ";
+    // delete[] _raw_input; 
+    // delete[] _raw_tmp;
+}
+#endif
+
+// ---- Extract K-mers from SKMs ----
+#define NULL_POS 0xFFFFFFFFFFFFFFFFUL
 inline T_kmer _gen_rc_kmer (T_kmer kmer, T_kvalue k) {
     T_kvalue i;
     T_kmer rc_kmer = 0;
@@ -384,48 +428,24 @@ inline T_kmer _gen_rc_kmer (T_kmer kmer, T_kvalue k) {
     }
     return rc_kmer;
 }
-void _extract_kmers_cpu (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* kmers) {
-    // load skms
-    byte* skms;
-    skms = new byte[skms_store.tot_size_bytes];//
-    size_t i;
-    if (skms_store.to_file) {
-        FILE* fp;
-        fp = fopen(skms_store.filename.c_str(), "rb");
-        assert(fp);
-        assert(fread(skms, 1, skms_store.tot_size_bytes, fp)==skms_store.tot_size_bytes);
-        fclose(fp);
-    }
-    else {
-        size_t skm_store_pos = 0;
-        #ifdef SKMSTOREV1
-        for (i=0; i<skms_store.skm_chunk_bytes.size(); i++) {
-            memcpy(skms+skm_store_pos, skms_store.skm_chunks[i], skms_store.skm_chunk_bytes[i]);
-            skm_store_pos += skms_store.skm_chunk_bytes[i];
-        }
-        #else
-        SKM skm_bulk[1024];
-        size_t count;
-        do {
-            count = skms_store.skms.try_dequeue_bulk(skm_bulk, 1024);
-            for (i=0; i<count; i++) {
-                memcpy(skms+skm_store_pos, skm_bulk[i].skm_chunk, skm_bulk[i].chunk_bytes);
-                skm_store_pos += skm_bulk[i].chunk_bytes;
-            }
-        } while (count);
-        #endif
-        assert(skms_store.tot_size_bytes == skm_store_pos);
-    }
-    // extract kmers
-    size_t kmer_store_pos = 0;
-    T_kmer kmer, rc_kmer;
+void _h_process_bytes (size_t beg, size_t end, byte* skms, T_kmer *kmers, atomic<size_t> *kmer_store_pos, T_kvalue k) {
+    if (end<=beg) return;
+    
+    // Add kmer_store_pos 128 at a time to avoid atomic overhead. When limited skm bytes left, add it 1 at a time. (2T: 800ms -> 100ms)
+    const size_t KMER_BATCH_SIZE = 128;
+    size_t in_batch_cnt = KMER_BATCH_SIZE;
+    size_t res_size = (k/3+3)*3/*max bytes for a SKM with only 1 kmer*/ * KMER_BATCH_SIZE;
+    size_t my_kmer_store_pos;
+
+    register T_kmer kmer, rc_kmer;
     T_kmer kmer_mask = (T_kmer)(TKMAX>>(sizeof(T_kmer)*8-k*2));
     bool new_kmer_required = true;
+    size_t i;
     byte j; // = 0,1,2
     byte indicator, tmp;
     byte selector[4] = {0, 0b00000011, 0b00001111, 0b00111111};
     
-    for (i=0, j=0; i<skms_store.tot_size_bytes;) { // i: index of byte, j: which base (0,1,2) in the current byte
+    for (i=beg, j=0; i<end;) { // i: index of byte, j: which base (0,1,2) in the current byte
         if (new_kmer_required) {
             // generate the first (k-1)-mer in the skm
             kmer = 0;
@@ -443,8 +463,21 @@ void _extract_kmers_cpu (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* k
             kmer <<= (k-len)*2;
             kmer |= (skms[i] >> ((3-(k-len))*2)) & selector[k-len];
             rc_kmer = _gen_rc_kmer(kmer, k);
-            kmers[kmer_store_pos++] = min(kmer, rc_kmer);
-            // cerr<<" "<<kmer<<endl;
+            
+            // assign space to store kmers
+            if (in_batch_cnt == KMER_BATCH_SIZE && i >= end - res_size)
+                my_kmer_store_pos = kmer_store_pos->fetch_add(1);
+            else {
+                my_kmer_store_pos++;
+                if (in_batch_cnt == KMER_BATCH_SIZE) {
+                    in_batch_cnt = 0;
+                    my_kmer_store_pos = kmer_store_pos->fetch_add(KMER_BATCH_SIZE);
+                }
+                in_batch_cnt++;
+            }
+            //
+
+            kmers[my_kmer_store_pos] = min(kmer, rc_kmer);
             new_kmer_required = false;
         } else if (j < skms[i]>>6) {
             kmer = (kmer << 2) & kmer_mask;
@@ -452,8 +485,19 @@ void _extract_kmers_cpu (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* k
             kmer |= tmp & 0b11;
             rc_kmer >>= 2;
             rc_kmer |= (T_kmer((~tmp) & 0b11)) << (2*k-2);
-            kmers[kmer_store_pos++] = min(kmer, rc_kmer);
-            // cerr<<" "<<kmer<<endl;
+            // assign space to store kmers
+            if (in_batch_cnt == KMER_BATCH_SIZE && i >= end - res_size)
+                my_kmer_store_pos = kmer_store_pos->fetch_add(1);
+            else {
+                my_kmer_store_pos++;
+                if (in_batch_cnt == KMER_BATCH_SIZE) {
+                    in_batch_cnt = 0;
+                    my_kmer_store_pos = kmer_store_pos->fetch_add(KMER_BATCH_SIZE);
+                }
+                in_batch_cnt++;
+            }
+            //
+            kmers[my_kmer_store_pos] = min(kmer, rc_kmer);
         }
         
         j++;
@@ -462,26 +506,99 @@ void _extract_kmers_cpu (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* k
             j=0, i++;
         }
     }
-    delete [] skms;//
-    // cerr<<skms_store.id<<" "<<kmer_store_pos<<" "<<skms_store.skm_cnt<<" "<<skms_store.tot_size_bytes<<"|"<<skms_store.kmer_cnt<<endl;
-    assert(kmer_store_pos == skms_store.kmer_cnt);
+}
+size_t _h_find_full_nonfull_pos (size_t beg, size_t end, byte* skms) {
+    if (beg == 0) return 0;
+    byte FN_pos_found = 0; // 0: not found, 1: find full byte, 2: find non-full block after a full
+    size_t i;
+    for (i = beg; (FN_pos_found<2) && (i < end); i++) {
+        if (skms[i] >= 0b11000000) FN_pos_found = 1;
+        if (skms[i] < 0b11000000) FN_pos_found *= 2;
+    }
+    return FN_pos_found>=2 ? i : NULL_POS; // return the next position after a full and nonfull
+}
+void _extract_kmer_parallel (int n_t, int tid, byte* skms, size_t tot_bytes, T_kmer *kmers, atomic<size_t> *kmer_store_pos, T_kvalue k, atomic<size_t> *thread_offs) {
+    size_t bytes_per_thread = (tot_bytes + n_t - 1) / n_t; // min: 1
+    thread_offs[tid] = _h_find_full_nonfull_pos (bytes_per_thread * tid, bytes_per_thread * (tid+1) < tot_bytes ? bytes_per_thread * (tid+1) : tot_bytes, skms);
+    // cerr<<"thread_offs[tid]:"<<thread_offs[tid]<<endl;
+    while (thread_offs[tid+1] == 0) this_thread::yield();
+    _h_process_bytes(thread_offs[tid], thread_offs[tid+1], skms, kmers, kmer_store_pos, k);
     return;
 }
+void extract_kmers_cpu (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* kmers, unsigned int n_threads = 1) {
+    // ---- Load SKMs ----
+    byte* skms;
+    skms = new byte[skms_store.tot_size_bytes];//
+    size_t i;
+    if (skms_store.to_file) {
+        FILE* fp;
+        fp = fopen(skms_store.filename.c_str(), "rb");
+        assert(fp);
+        assert(fread(skms, 1, skms_store.tot_size_bytes, fp)==skms_store.tot_size_bytes);
+        fclose(fp);
+    }
+    else {
+        size_t skm_store_pos = 0;
+        SKM skm_bulk[1024];
+        size_t count;
+        do {
+            count = skms_store.skms.try_dequeue_bulk(skm_bulk, 1024);
+            for (i=0; i<count; i++) {
+                memcpy(skms+skm_store_pos, skm_bulk[i].skm_chunk, skm_bulk[i].chunk_bytes);
+                skm_store_pos += skm_bulk[i].chunk_bytes;
+            }
+        } while (count);
+        assert(skms_store.tot_size_bytes == skm_store_pos);
+    }
+    atomic<size_t> kmer_store_pos{0};
+
+    // ---- Extract Kmers ----
+    // _h_process_bytes(0, skms_store.tot_size_bytes, skms, kmers, kmer_store_pos, k);
+
+    vector<thread> vt;
+    atomic<size_t> thread_offs[n_threads+1];
+    for (i=0; i<=n_threads; i++) thread_offs[i] = 0;
+    thread_offs[n_threads] = (size_t)(skms_store.tot_size_bytes);
+    atomic<size_t> *thread_offs_arr = thread_offs;
+    //  = new size_t;
+    // memset(thread_offs, 0, sizeof(size_t) * (n_threads+1));
+    for (i=0; i<n_threads; i++)
+        vt.push_back(thread([&skms_store, n_threads, skms, kmers, &kmer_store_pos, k, i, thread_offs_arr] () {
+            _extract_kmer_parallel (n_threads, i, skms, skms_store.tot_size_bytes, kmers, &kmer_store_pos, k, thread_offs_arr);
+        }));
+    for (auto &t:vt)
+        if (t.joinable()) t.join();
+    // delete thread_offs;
+
+    delete [] skms;//
+    assert(kmer_store_pos == skms_store.kmer_cnt);
+}
+
 size_t KmerCountingCPU(T_kvalue k,
     SKMStoreNoncon *skms_store,
     T_kmer_cnt kmer_min_freq, T_kmer_cnt kmer_max_freq,
-    _out_ vector<T_kmc> &kmc_result_curpart, int tid) {
+    _out_ vector<T_kmc> &kmc_result_curpart, int tid, int threads_cpu_sorter) {
     
     if (skms_store->kmer_cnt == 0) return 0;
     
     WallClockTimer wct;
     
+    #ifdef _USE_RADULS_H
+    auto _raw_input = new uint8_t[skms_store->kmer_cnt * sizeof(T_kmer) + raduls::ALIGNMENT];//
+    auto kmers = reinterpret_cast<T_kmer*>(_raw_input);
+    while (reinterpret_cast<uintptr_t>(kmers) % raduls::ALIGNMENT) ++kmers;
+    #else
     T_kmer *kmers = new T_kmer[skms_store->kmer_cnt];//
+    #endif
     // WallClockTimer wct_e;
-    _extract_kmers_cpu(*skms_store, k, kmers); // 12%
-    // double t1= wct_e.stop();
+    extract_kmers_cpu(*skms_store, k, kmers, threads_cpu_sorter); // 12%
+    // cerr<<wct_e.stop()<<endl;
     // WallClockTimer wct_s;
+    #ifdef _USE_RADULS_H
+    sort_kmers(kmers, skms_store->kmer_cnt, k, _raw_input, threads_cpu_sorter); // 88%
+    #else
     sort_kmers(kmers, skms_store->kmer_cnt, k); // 88%
+    #endif
     // sort(kmers, kmers+skms_store->kmer_cnt);
     // double t2= wct_s.stop();
     
@@ -512,7 +629,11 @@ size_t KmerCountingCPU(T_kvalue k,
     validation_cnt += cur_cnt;
     // cerr<<validation_cnt<<" == "<<skms_store->kmer_cnt<<endl;
     assert(validation_cnt == skms_store->kmer_cnt);
+    #ifdef _USE_RADULS_H
+    delete [] _raw_input;//
+    #else
     delete [] kmers;//
+    #endif
     skms_store->clear_skm_data();
     logger->log("CPU  \t(T"+to_string(tid)+"):\tPart "+to_string(skms_store->id)+" "+to_string(skms_store->tot_size_bytes)+"|"+to_string(skms_store->kmer_cnt)+" "+to_string(distinct_kmers)+" \t"+to_string(wct.stop()), Logger::LV_DEBUG);
     delete skms_store;//

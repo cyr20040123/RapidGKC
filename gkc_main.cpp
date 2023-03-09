@@ -87,7 +87,7 @@ size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, ve
     // if (tid / gpars.max_threads_per_gpu >= gpars.n_devices) {
     if ((!PAR.GPU_only) && (PAR.CPU_only || tid >= gpars.n_devices * gpars.max_threads_per_gpu)) {
         for (auto i: store_vec)
-            res += KmerCountingCPU(PAR.K_kmer, i, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[i->id], tid);
+            res += KmerCountingCPU(PAR.K_kmer, i, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[i->id], tid, PAR.threads_cpu_sorter);
         cerr<<"-";
     }
     else {
@@ -99,7 +99,7 @@ size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, ve
 }
 size_t phase2_forceCPU (int tid, SKMStoreNoncon* skm_store, vector<T_kmc> *kmc_result) {
     cerr<<"o";
-    return KmerCountingCPU(PAR.K_kmer, skm_store, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[skm_store->id], tid);
+    return KmerCountingCPU(PAR.K_kmer, skm_store, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[skm_store->id], tid, PAR.threads_cpu_sorter);
 }
 /*
 size_t p2_kmc (int tid, int max_streams, atomic<int> &i_part, vector<size_t> &distinct_kmer_cnt, vector<SKMStoreNoncon*> &skm_part_vec, vector<T_kmc> *kmc_result, CUDAParams &gpars) {
@@ -232,13 +232,15 @@ void KmerCounting_TP(CUDAParams &gpars) {
     // ==== 2nd phase: superkmer extraction and kmer counting ====
     // ===========================================================
     logger->log("**** Phase 2: Superkmer extraction and kmer counting ****", Logger::LV_NOTICE);
-    logger->log("(with "+to_string(PAR.N_threads)+" threads)");
+    logger->log("-t2 = "+to_string(PAR.threads_p2)+
+                "\tGPU threads = "+to_string(PAR.max_threads_per_gpu)+ " * "+to_string(PAR.n_devices)+
+                "\tCPU threads = "+to_string(PAR.threads_p2 - PAR.max_threads_per_gpu * PAR.n_devices)+" * "+to_string(PAR.threads_cpu_sorter));
     
     WallClockTimer wct2;
     
     vector<T_kmc> kmc_result[PAR.SKM_partitions];
     int max_streams = min((PAR.SKM_partitions+max(PAR.n_devices, PAR.N_threads)) / max(PAR.n_devices, PAR.N_threads), PAR.n_streams_phase2);
-    PAR.N_threads -= PAR.reserved_thread_p2;
+    PAR.N_threads = PAR.threads_p2;
     
     // todo: available gpu mem = GPU_VRAM // N_THREADS * N_GPUS, required: kmer_cnt * [8|16] * 3;
     /*

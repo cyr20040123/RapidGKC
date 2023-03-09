@@ -129,8 +129,10 @@ __device__ size_t _find_full_nonfull_pos (size_t beg, size_t end, byte* d_skms) 
     byte FN_pos_found = 0; // 0: not found, 1: find full byte, 2: find non-full block after a full
     size_t i;
     for (i = beg; (FN_pos_found<2) & (i < end); i++) {
-        FN_pos_found |= ((d_skms[i] & 0b11000000) == 0b11000000); // if full block found, beg_pos_found=1
-        FN_pos_found <<= ((d_skms[i] & 0b11000000) < 0b11000000); // if non-full block found, beg_pos_found*=2
+        // FN_pos_found |= ((d_skms[i] & 0b11000000) == 0b11000000); // if full block found, beg_pos_found=1
+        // FN_pos_found <<= ((d_skms[i] & 0b11000000) < 0b11000000); // if non-full block found, beg_pos_found*=2
+        FN_pos_found |= (d_skms[i] >= 0b11000000); // if full block found, beg_pos_found=1
+        FN_pos_found <<= (d_skms[i] < 0b11000000); // if non-full block found, beg_pos_found*=2
     }
     return (FN_pos_found>=2) * i + (FN_pos_found<2) * NULL_POS; // return the next position after a full and nonfull
 }

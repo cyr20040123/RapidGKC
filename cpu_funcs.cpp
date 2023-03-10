@@ -432,7 +432,7 @@ void _h_process_bytes (size_t beg, size_t end, byte* skms, T_kmer *kmers, atomic
     if (end<=beg) return;
     
     // Add kmer_store_pos 128 at a time to avoid atomic overhead. When limited skm bytes left, add it 1 at a time. (2T: 800ms -> 100ms)
-    const size_t KMER_BATCH_SIZE = 128;
+    const size_t KMER_BATCH_SIZE = 1024;
     size_t in_batch_cnt = KMER_BATCH_SIZE;
     size_t res_size = (k/3+3)*3/*max bytes for a SKM with only 1 kmer*/ * KMER_BATCH_SIZE;
     size_t my_kmer_store_pos;

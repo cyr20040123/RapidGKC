@@ -1,8 +1,7 @@
 #ifndef _FILELOADER_HPP
 #define _FILELOADER_HPP
 
-// #define USEMMAP
-#define STEP3P
+// #define STEP3P
 
 #include <algorithm>
 #include <future>
@@ -41,9 +40,6 @@ struct LineBuffer {
     // std::vector<char*> newline_vec;
     std::vector<ReadLine> readline_vec;
     /* std::vector<char*> newline_vec2;*/
-    // #ifdef STEP3P
-    // std::atomic_flag *flag;
-    // #endif
 };
 
 class ReadLoader {

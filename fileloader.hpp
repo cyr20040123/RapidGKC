@@ -243,7 +243,7 @@ private:
         LineBuffer t;
         int i_end;
         while (_LBQ2.pop(t)) {
-            i_end = t.readline_vec.size()/3*2;
+            i_end = t.readline_vec.size()/5*3;
             for (int i = 1; i < i_end; i++) {
                 if (t.readline_vec[i].len >= _min_read_len) {
                     read.len = t.readline_vec[i].len;
@@ -277,7 +277,7 @@ private:
         LineBuffer t;
         while (_LBQ.pop(t)) {
             #ifdef STEP3P
-            int add = t.readline_vec.size()/3*2;
+            int add = t.readline_vec.size()/5*3;
             #endif
             // for (ReadLine i: t.readline_vec) {
             for (std::vector<ReadLine>::iterator i = t.readline_vec.begin(); i != t.readline_vec.end();) {
@@ -311,7 +311,7 @@ private:
                 #endif
             }
             #ifdef STEP3P
-            _LBQ2.push(t);
+            _LBQ2.wait_push(t, _max_queue_size);
             // if (t.flag->test_and_set()) {delete t.data.buf; delete t.flag;}
             #else
             delete t.data.buf; // malloc in _STEP1_load_from_file // NOT MMAP

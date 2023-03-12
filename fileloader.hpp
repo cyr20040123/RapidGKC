@@ -277,7 +277,7 @@ private:
         LineBuffer t;
         while (_LBQ.pop(t)) {
             #ifdef STEP3P
-            int add = t.readline_vec.size()/5*3;
+            int add = t.readline_vec.size()/5*3 > 1 ? t.readline_vec.size()/5*3 : 1;
             #endif
             // for (ReadLine i: t.readline_vec) {
             for (std::vector<ReadLine>::iterator i = t.readline_vec.begin(); i != t.readline_vec.end();) {

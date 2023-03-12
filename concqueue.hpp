@@ -47,7 +47,7 @@ public:
         #ifdef WAITMEASURE
         // if (!_cv.wait_for(lck, 200ms, [this, size_thr](){return this->_size < size_thr;})) // true: finish waiting, false: timeout
         //     debug_push_wait++;
-        _cv.wait_for(lck, 200ms, [this, size_thr]() {
+        _cv.wait_for(lck, 100ms, [this, size_thr]() {
             if (this->_size >= size_thr) {this->debug_push_wait++; return false;}
             else return true;
         });

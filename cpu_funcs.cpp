@@ -465,7 +465,7 @@ void _h_process_bytes (size_t beg, size_t end, byte* skms, T_kmer *kmers, atomic
             rc_kmer = _gen_rc_kmer(kmer, k);
             
             // assign space to store kmers
-            if (in_batch_cnt == KMER_BATCH_SIZE && i >= end - res_size)
+            if (in_batch_cnt == KMER_BATCH_SIZE && i + res_size >= end)
                 my_kmer_store_pos = kmer_store_pos->fetch_add(1);
             else {
                 my_kmer_store_pos++;
@@ -486,7 +486,7 @@ void _h_process_bytes (size_t beg, size_t end, byte* skms, T_kmer *kmers, atomic
             rc_kmer >>= 2;
             rc_kmer |= (T_kmer((~tmp) & 0b11)) << (2*k-2);
             // assign space to store kmers
-            if (in_batch_cnt == KMER_BATCH_SIZE && i >= end - res_size)
+            if (in_batch_cnt == KMER_BATCH_SIZE && i + res_size >= end)
                 my_kmer_store_pos = kmer_store_pos->fetch_add(1);
             else {
                 my_kmer_store_pos++;

@@ -87,6 +87,11 @@ __device__ void _process_bytes (size_t beg, size_t end, byte* d_skms, T_kmer *d_
     T_kmer kmer;
     T_kvalue kmer_bases; // effective bases
     unsigned long long store_pos;
+
+    const unsigned long long KMER_BATCH_SIZE = 256;
+    unsigned long long  res_size = (k/3+4)*3/*max bytes for a SKM with only 1 kmer*/ * KMER_BATCH_SIZE;
+    unsigned long long  in_batch_cnt = KMER_BATCH_SIZE;
+
     byte indicator, ii;
     byte beg_selector[4] = {0, 0b00000011, 0b00001111, 0b00111111};
     byte end_selector[4] = {0, 0b00110000, 0b00111100, 0b00111111};
@@ -108,7 +113,20 @@ __device__ void _process_bytes (size_t beg, size_t end, byte* d_skms, T_kmer *d_
             kmer |= (d_skms[i] & end_selector[k-kmer_bases]) >> ((BYTE_BASES-(k-kmer_bases))*2);
             ii = k-kmer_bases; // ii: bases used of the current byte
         }
-        store_pos = atomicAdd(d_kmer_store_pos, 1);
+        // store_pos = atomicAdd(d_kmer_store_pos, 1);
+        // assign space to store kmers (replace line above)
+        if (in_batch_cnt == KMER_BATCH_SIZE && i + res_size >= end)
+            store_pos = atomicAdd(d_kmer_store_pos, 1);
+        else {
+            store_pos++;
+            if (in_batch_cnt == KMER_BATCH_SIZE) {
+                in_batch_cnt = 0;
+                store_pos = atomicAdd(d_kmer_store_pos, KMER_BATCH_SIZE);
+            }
+            in_batch_cnt++;
+        }
+        //
+
         d_kmers[store_pos] = kmer;
         // printf(" %llu\n", kmer);
         
@@ -116,7 +134,19 @@ __device__ void _process_bytes (size_t beg, size_t end, byte* d_skms, T_kmer *d_
         indicator = (d_skms[i]>>6) & 0b11;
         while ((indicator == BYTE_BASES) | (ii < indicator)) { // full block or ii not end
             kmer = ((kmer << 2) | ((d_skms[i] >> ((BYTE_BASES-ii-1)*2)) & 0b11)) & kmer_mask;
-            store_pos = atomicAdd(d_kmer_store_pos, 1);
+            // store_pos = atomicAdd(d_kmer_store_pos, 1);
+            // assign space to store kmers (replace line above)
+            if (in_batch_cnt == KMER_BATCH_SIZE && i + res_size >= end)
+                store_pos = atomicAdd(d_kmer_store_pos, 1);
+            else {
+                store_pos++;
+                if (in_batch_cnt == KMER_BATCH_SIZE) {
+                    in_batch_cnt = 0;
+                    store_pos = atomicAdd(d_kmer_store_pos, KMER_BATCH_SIZE);
+                }
+                in_batch_cnt++;
+            }
+            //
             d_kmers[store_pos] = kmer;
             // printf(" %llu\n", kmer);
             ii = (ii+1) % BYTE_BASES;

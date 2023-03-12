@@ -2,6 +2,7 @@
 #define _FILELOADER_HPP
 
 // #define USEMMAP
+#define STEP3P
 
 #include <algorithm>
 #include <future>
@@ -40,12 +41,18 @@ struct LineBuffer {
     // std::vector<char*> newline_vec;
     std::vector<ReadLine> readline_vec;
     /* std::vector<char*> newline_vec2;*/
+    // #ifdef STEP3P
+    // std::atomic_flag *flag;
+    // #endif
 };
 
 class ReadLoader {
 private:
     ConcQueue<DataBuffer> _DBQ;             // data buffer queue
     ConcQueue<LineBuffer> _LBQ;             // line buffer queue
+    #ifdef STEP3P
+    ConcQueue<LineBuffer> _LBQ2;             // line buffer queue
+    #endif
     ConcQueue<std::vector<ReadPtr>> _RBQ;    // read batch queue
     std::vector<std::string> _filenames;
     bool _is_fasta;
@@ -196,6 +203,10 @@ private:
         char *line_beg, *line_end;
         while (_DBQ.pop(t)) {
             LineBuffer x;
+            // #ifdef STEP3P
+            // x.flag = new std::atomic_flag();
+            // x.flag -> clear();
+            // #endif
             x.data = std::move(t);
             if (x.data.size == 0) {
                 is_read_line = 0; // new file
@@ -223,6 +234,36 @@ private:
         std::cout<<"Loader finish 2 "<</*push_cnt<<" "<<line_cnt<<*/std::endl;
     }
     #endif
+    #ifdef STEP3P
+    void _STEP3PLUS () {
+        std::vector<ReadPtr> batch_reads;
+        batch_reads.reserve(_read_batch_size);
+        ReadPtr read;
+
+        LineBuffer t;
+        int i_end;
+        while (_LBQ2.pop(t)) {
+            i_end = t.readline_vec.size()/3*2;
+            for (int i = 1; i < i_end; i++) {
+                if (t.readline_vec[i].len >= _min_read_len) {
+                    read.len = t.readline_vec[i].len;
+                    read.read = new char[read.len];
+                    memcpy(read.read, t.readline_vec[i].ptr, read.len);
+                    batch_reads.push_back(read);
+                }
+                if (batch_reads.size() >= _read_batch_size) {
+                    _RBQ.wait_push(batch_reads, _n_threads_consumer + 1);
+                    batch_reads = std::vector<ReadPtr>();
+                    batch_reads.reserve(_read_batch_size);
+                }
+            }
+            // if (t.flag->test_and_set()) {delete t.data.buf; delete t.flag;}
+            delete t.data.buf;
+        }
+        if (batch_reads.size()) _RBQ.push(batch_reads); // add last batch of reads
+        _RBQ.finish();
+    }
+    #endif
     void _STEP3_extract_read () {
         WallClockTimer wct_readloader;
         
@@ -235,22 +276,26 @@ private:
 
         LineBuffer t;
         while (_LBQ.pop(t)) {
-            for (ReadLine i: t.readline_vec) {
+            #ifdef STEP3P
+            int add = t.readline_vec.size()/3*2;
+            #endif
+            // for (ReadLine i: t.readline_vec) {
+            for (std::vector<ReadLine>::iterator i = t.readline_vec.begin(); i != t.readline_vec.end();) {
                 if (start_from_buffer) {
-                    read.len = last_line_buffer.length() + i.len;
+                    read.len = last_line_buffer.length() + i->len;
                     read.read = new char[read.len];
                     memcpy(read.read, last_line_buffer.c_str(), last_line_buffer.length());
-                    memcpy(read.read + last_line_buffer.length(), i.ptr, i.len);
+                    memcpy(read.read + last_line_buffer.length(), i->ptr, i->len);
                     start_from_buffer = false;
-                } else if (i.len > 0) {
+                } else if (i->len > 0) {
                     // std::cerr<<i.len<<"@"<<i.ptr<<std::endl;
-                    read.len = i.len;
+                    read.len = i->len;
                     read.read = new char[read.len];
-                    memcpy(read.read, i.ptr, i.len);
-                } else if (i.len < 0) {
+                    memcpy(read.read, i->ptr, i->len);
+                } else if (i->len < 0) {
                     start_from_buffer = true;
-                    last_line_buffer = std::string(i.ptr, -i.len);
-                    continue;
+                    last_line_buffer = std::string(i->ptr, -(i->len));
+                    i++; continue;
                 }
                 if (read.len >= _min_read_len) batch_reads.push_back(read);
                 if (batch_reads.size() >= _read_batch_size) {
@@ -258,11 +303,32 @@ private:
                     batch_reads = std::vector<ReadPtr>();
                     batch_reads.reserve(_read_batch_size);
                 }
+                #ifdef STEP3P
+                i += add;
+                add = 1;
+                #else
+                i++;
+                #endif
             }
+            #ifdef STEP3P
+            _LBQ2.push(t);
+            // if (t.flag->test_and_set()) {delete t.data.buf; delete t.flag;}
+            #else
             delete t.data.buf; // malloc in _STEP1_load_from_file // NOT MMAP
+            #endif
+        }
+        if (start_from_buffer) {
+            read.len = last_line_buffer.length();
+            read.read = new char[read.len];
+            memcpy(read.read, last_line_buffer.c_str(), read.len);
+            batch_reads.push_back(read);
         }
         if (batch_reads.size()) _RBQ.push(batch_reads); // add last batch of reads
+        #ifdef STEP3P
+        _LBQ2.finish();
+        #else
         _RBQ.finish();
+        #endif
         std::cout<<"Loader finish 3 in "/*<<pop_cnt<<" "<<push_cnt<<" "<<line_cnt*/<<wct_readloader.stop()<<std::endl;
     }
     // void _STEP3_extract_read () {
@@ -363,6 +429,9 @@ public:
         _started_threads.push_back(std::thread(&ReadLoader::_STEP1_load_from_file, this));
         _started_threads.push_back(std::thread(&ReadLoader::_STEP2_find_newline, this));
         _started_threads.push_back(std::thread(&ReadLoader::_STEP3_extract_read, this));
+        #ifdef STEP3P
+        _started_threads.push_back(std::thread(&ReadLoader::_STEP3PLUS, this));
+        #endif
     }
     void join_threads() {
         for (std::thread &t: _started_threads)
@@ -387,6 +456,9 @@ public:
     void output_wait () {
         std::cout<<"1 Load    push wait: "<<_DBQ.debug_push_wait<<"\tpop wait: "<<_DBQ.debug_pop_wait<<std::endl;
         std::cout<<"2 Newline push wait: "<<_LBQ.debug_push_wait<<"\tpop wait: "<<_LBQ.debug_pop_wait<<std::endl;
+        #ifdef STEP3P
+        std::cout<<"    _LBQ2 push wait: "<<_LBQ2.debug_push_wait<<"\tpop wait: "<<_LBQ2.debug_pop_wait<<std::endl;
+        #endif
         std::cout<<"3 Extract push wait: "<<_RBQ.debug_push_wait<<"\tpop wait: "<<_RBQ.debug_pop_wait<<std::endl;
     }
     #endif

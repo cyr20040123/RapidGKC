@@ -1,4 +1,4 @@
-// #define TIMER
+#define GPU_EXTRACT_TIMING
 
 #define CUDA_CHECK(call) \
 if((call) != cudaSuccess) { \
@@ -288,12 +288,19 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
     size_t return_value = 0;
     int i, n_streams = skms_stores.size();
     cudaStream_t streams[n_streams];
+    #ifdef GPU_EXTRACT_TIMING
+    cudaEvent_t start[n_streams], mid[n_streams], stop[n_streams];
+    #endif
 
     vector<thrust::device_vector<T_kmer>> kmers_d_vec(n_streams); // for 0
     vector<size_t> tot_kmers(n_streams);
     string logs = "GPU "+to_string(gpuid)+"\t(T"+to_string(tid)+"):";
     for (i=0; i<n_streams; i++) {
         CUDA_CHECK(cudaStreamCreate(&streams[i]));
+        #ifdef GPU_EXTRACT_TIMING
+        cudaEventCreate(&start[i]); cudaEventCreate(&mid[i]); cudaEventCreate(&stop[i]);
+        cudaEventRecord(start[i], streams[i]);
+        #endif
         // logger->log("GPU "+to_string(gpuid)+" Stream "+to_string(i)+" counting Partition "+to_string(skms_stores[i]->id), Logger::LV_INFO);
         logs += "\tS "+to_string(i)+" Part "+to_string(skms_stores[i]->id)+" "+to_string(skms_stores[i]->tot_size_bytes)+"|"+to_string(skms_stores[i]->kmer_cnt);
         // logger->log(logs, Logger::LV_INFO);
@@ -305,6 +312,9 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             /*else*/ Extract_Kmers(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG, gpars.TpB);
             tot_kmers[i] = kmers_d_vec[i].size();
         }
+        #ifdef GPU_EXTRACT_TIMING
+        cudaEventRecord(mid[i], streams[i]);
+        #endif
     }
 
     thrust::constant_iterator<T_kvalue> ik(k);
@@ -342,6 +352,9 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             idx_h_vec[i] = thrust::host_vector<T_read_len>(idx_d_vec[i].begin(), newend_idx_d);
             idx_h_vec[i].push_back(tot_kmers[i]); // [0,2,5] -> [0,2,5,7] A2 B3 C2
         }
+        #ifdef GPU_EXTRACT_TIMING
+        cudaEventRecord(stop[i], streams[i]);
+        #endif
     }
     
     #ifdef RESULT_VALIDATION
@@ -370,14 +383,28 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
     }
     #endif
 
+    #ifdef GPU_EXTRACT_TIMING
+    float time1, time2, time_ratio = 0;
+    #endif
     for (i=0; i<n_streams; i++) {
         if (skms_stores[i]->tot_size_bytes == 0) continue;
         return_value += idx_h_vec[i].size()-1;
+        #ifdef GPU_EXTRACT_TIMING
+        cudaEventElapsedTime(&time1, start[i], mid[i]); cudaEventElapsedTime(&time2, mid[i], stop[i]);
+        time_ratio += time1 / (time1+time2);
+        #endif
     }
+    #ifdef GPU_EXTRACT_TIMING
+    time_ratio /= (float)n_streams;
+    #endif
     for (i=0; i<n_streams; i++) {
         // skms_stores[i]->clear_skm_data();
         delete skms_stores[i];//
     }
-    logger->log(logs+" "+to_string(return_value), Logger::LV_DEBUG);
+    logger->log(logs+" "+to_string(return_value)
+    #ifdef GPU_EXTRACT_TIMING
+    +" "+to_string(time_ratio)
+    #endif
+    , Logger::LV_DEBUG);
     return return_value; // total distinct kmer
 }

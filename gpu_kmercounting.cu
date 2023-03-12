@@ -1,4 +1,4 @@
-#define GPU_EXTRACT_TIMING
+// #define GPU_EXTRACT_TIMING
 
 #define CUDA_CHECK(call) \
 if((call) != cudaSuccess) { \

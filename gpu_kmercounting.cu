@@ -22,8 +22,8 @@ if (cuerr.cu_err != CUDA_SUCCESS) { \
 // #include "nvcomp/gdeflate.hpp"
 // #include "nvcomp.hpp"
 
-#include <fcntl.h> // open
-#include <unistd.h> // close
+// #include <fcntl.h> // open
+// #include <unistd.h> // close
 // #include "cufile.h"
 
 #include <thrust/host_vector.h>

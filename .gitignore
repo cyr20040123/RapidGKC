@@ -24,3 +24,4 @@ unused/*
 avx*
 Raduls/*
 backup/*
+.vscode/*

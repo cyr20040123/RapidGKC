@@ -13,6 +13,17 @@
 #include "concqueue.hpp"
 // using namespace std;
 
+// for thread affinity
+#include <pthread.h>
+#include <sched.h>
+
+struct ThreadAffinity {
+    int avail_logical_cores_beg = 0;
+    int avail_logical_cores_end = 1;
+    int vip_tid_beg = -1; // -1 means TA is not set
+    int vip_tid_end = -1; // -1 means TA is not set
+};
+
 template</*typename T_IN=void, */typename T_OUT=void>
 class ThreadPool {
 private:
@@ -58,8 +69,42 @@ private:
             exit(errno);
         }
     }
+    /* Example quad-core: ta={0, 4, 1, 3}
+    T0 = Core2, TVIP1 = C0, TVIP2 = C1, T3=C3, T4=C2C3, T5=C2C3
+    */
+    void _set_thread_affinity(ThreadAffinity ta) {
+        assert(ta.avail_logical_cores_beg < ta.avail_logical_cores_end);
+        assert(ta.vip_tid_end - ta.vip_tid_beg <= ta.avail_logical_cores_end - ta.avail_logical_cores_beg);
+        if (ta.avail_logical_cores_end > std::thread::hardware_concurrency()) {
+            std::cerr<<"Warning! Wrong argument setting: ta.avail_logical_cores_end = "<<ta.avail_logical_cores_end<<std::endl;
+            ta.avail_logical_cores_end = std::thread::hardware_concurrency();
+        }
+        int vip_core_i = ta.avail_logical_cores_beg;
+        int normal_core_i = ta.avail_logical_cores_beg + ta.vip_tid_end - ta.vip_tid_beg;
+        
+        cpu_set_t cpuset_normal;
+        CPU_ZERO(&cpuset_normal);
+        for (int i=normal_core_i; i<ta.avail_logical_cores_end; i++) CPU_SET(i, &cpuset_normal); // cores for normal threads
+        CPU_SET(ta.avail_logical_cores_end-1, &cpuset_normal); // at least one thread
+        
+        for (int tid=0; tid<_n_threads; tid++) {
+            cpu_set_t cpuset;
+            CPU_ZERO(&cpuset);
+            if (tid >= ta.vip_tid_beg && tid < ta.vip_tid_end) { // vip thread
+                CPU_SET(vip_core_i++, &cpuset);
+                assert(!pthread_setaffinity_np(_threads[tid].native_handle(), sizeof(cpu_set_t), &cpuset));
+            } else { // normal thread
+                if (normal_core_i < ta.avail_logical_cores_end) {
+                    CPU_SET(normal_core_i++, &cpuset);
+                    assert(!pthread_setaffinity_np(_threads[tid].native_handle(), sizeof(cpu_set_t), &cpuset));
+                } else { // no cores available
+                    assert(!pthread_setaffinity_np(_threads[tid].native_handle(), sizeof(cpu_set_t), &cpuset_normal));
+                }
+            }
+        }
+    }
 public:
-    ThreadPool(int n_threads, int busy_thr = -1) {
+    ThreadPool(int n_threads, int busy_thr = -1, ThreadAffinity ta = {0,1,-1,-1}) {
         if (busy_thr < 0) _busy_thr = 2*n_threads;
         else _busy_thr = busy_thr;
         _n_threads = n_threads;
@@ -67,6 +112,7 @@ public:
         for (tid=0; tid<_n_threads; tid++) {
             _threads.emplace_back(&ThreadPool::_worker, this, tid);
         }
+        if (ta.vip_tid_end>=0) this->_set_thread_affinity(ta);
     }
     ~ThreadPool() {
         for (auto &t: _threads) {

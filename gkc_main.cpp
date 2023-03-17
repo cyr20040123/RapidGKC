@@ -85,15 +85,18 @@ void phase1(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMStoreNoncon*> &
 size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, vector<T_kmc> *kmc_result) {
     size_t res = 0;
     // if (tid / gpars.max_threads_per_gpu >= gpars.n_devices) {
+    // WallClockTimer wct;
     if ((!PAR.GPU_only) && (PAR.CPU_only || tid >= gpars.n_devices * gpars.max_threads_per_gpu)) {
         for (auto i: store_vec)
             res += KmerCountingCPU(PAR.K_kmer, i, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[i->id], tid, PAR.threads_cpu_sorter);
         cerr<<"-";
+        // cerr<<"-"+to_string(wct.stop());
     }
     else {
         int gpuid = tid / gpars.max_threads_per_gpu;
         res += kmc_counting_GPU_streams (PAR.K_kmer, store_vec, gpars, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result, gpuid, tid);
         cerr<<"*";
+        // cerr<<"*"+to_string(wct.stop());
     }
     return res;
 }
@@ -259,7 +262,7 @@ void KmerCounting_TP(CUDAParams &gpars) {
     assert(i_part >= PAR.SKM_partitions);
      */
     future<size_t> distinct_kmer_cnt[PAR.SKM_partitions];
-    ThreadPool<size_t> tp(PAR.N_threads);
+    ThreadPool<size_t> tp(PAR.N_threads,PAR.N_threads,{0,PAR.N_threads,0,PAR.max_threads_per_gpu});
     int j;
     for (i=0; i<PAR.SKM_partitions; i=j) {
         long long vram_avail = gpars.vram[0];
@@ -324,10 +327,10 @@ int main (int argc, char** argvs) {
     gpars.n_devices = PAR.n_devices;
     gpars.n_streams = PAR.n_streams;
     gpars.n_streams_phase2 = PAR.n_streams_phase2;
-    gpars.NUM_BLOCKS_PER_GRID = PAR.grid_size;
-    gpars.NUM_THREADS_PER_BLOCK = PAR.block_size;
-    gpars.BpG = PAR.grid_size2;
-    gpars.TpB = PAR.block_size2;
+    gpars.BpG1 = PAR.grid_size;
+    gpars.TpB1 = PAR.block_size;
+    gpars.BpG2 = PAR.grid_size2;
+    gpars.TpB2 = PAR.block_size2;
     gpars.items_stream_mul = PAR.reads_per_stream_mul;
     // for (int i=0; i<PAR.N_threads; i++) gpars.gpuid_thread.push_back(-1);
     // gpars.gpuworker_threads = 0;

@@ -207,8 +207,6 @@ public:
             // else if (!strcmp(argvs[i], "-kf")) Kmer_filter = atof(argvs[++i])*100;
             else if (!strcmp(argvs[i], "-tmp")) tmp_file_folder = std::string(argvs[++i]);
             else if (!strcmp(argvs[i], "-im")) to_file = false;
-            else if (!strcmp(argvs[i], "-log")) log_file_folder = std::string(argvs[++i]);
-            else if (!strcmp(argvs[i], "-lv")) log_lv = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-fb")) Buffer_size_MB = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-rb")) Batch_read_loading = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-grid")) grid_size = atoi(argvs[++i]);
@@ -222,6 +220,8 @@ public:
             else if (!strcmp(argvs[i], "-cpuonly")) CPU_only = true;
             else if (!strcmp(argvs[i], "-gpuonly")) GPU_only = true;
             else if (!strcmp(argvs[i], "-checkvram")) check_VRAM = true;
+            else if (!strcmp(argvs[i], "-log")) log_file_folder = std::string(argvs[++i]);
+            else if (!strcmp(argvs[i], "-lv")) log_lv = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-read")) {
                 int j;
                 for (j=i+1; j<argc; j++, i++) {
@@ -256,8 +256,8 @@ public:
 // ================ struct CUDAParams ================
 // ===================================================
 struct CUDAParams {
-    int NUM_BLOCKS_PER_GRID, NUM_THREADS_PER_BLOCK;
-    int BpG, TpB; // for step 2
+    int BpG1, TpB1;
+    int BpG2, TpB2; // for step 2
     int n_streams, items_stream_mul;
     int n_streams_phase2;
     int n_devices;

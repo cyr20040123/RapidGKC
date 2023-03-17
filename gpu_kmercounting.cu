@@ -251,7 +251,7 @@ __host__ byte* load_SKM_from_file (SKMStoreNoncon &skms_store) {
     return d_skms;
 }
 
-void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kmers, cudaStream_t &stream, int BpG=8, int TpB=256) {
+void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kmers, cudaStream_t &stream, int BpG2=8, int TpB2=256) {
     // cudaStream_t stream;
     // CUDA_CHECK(cudaStreamCreate(&stream));
     
@@ -292,9 +292,9 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kme
     // cerr<<"debug2"<<endl;
     // CUDA_CHECK(cudaStreamSynchronize(stream));
     // ---- GPU work ----
-    if (skms_store.tot_size_bytes / 4 <= BpG * TpB) GPU_Extract_Kmers<<<1, skms_store.tot_size_bytes/64+1, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k); // 强行debug // mountain of shit, do not touch
-    else GPU_Extract_Kmers<<<BpG, TpB, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
-    // GPU_Extract_Kmers_test<<<BpG, TpB, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
+    if (skms_store.tot_size_bytes / 4 <= BpG2 * TpB2) GPU_Extract_Kmers<<<1, skms_store.tot_size_bytes/64+1, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k); // 强行debug // mountain of shit, do not touch
+    else GPU_Extract_Kmers<<<BpG2, TpB2, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
+    // GPU_Extract_Kmers_test<<<BpG2, TpB2, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
     
     CUDA_CHECK(cudaFreeAsync(d_skms, stream));
     CUDA_CHECK(cudaFreeAsync(d_kmer_store_pos, stream));
@@ -338,8 +338,8 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             // ---- 0. Extract kmers from SKMStore: ---- 
             kmers_d_vec[i] = thrust::device_vector<T_kmer>(skms_stores[i]->kmer_cnt);
             T_kmer *d_kmers_data = thrust::raw_pointer_cast(kmers_d_vec[i].data());
-            // if (GPU_compression) Extract_Kmers_Compressed(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG, gpars.TpB, gpuid);
-            /*else*/ Extract_Kmers(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG, gpars.TpB);
+            // if (GPU_compression) Extract_Kmers_Compressed(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2, gpuid);
+            /*else*/ Extract_Kmers(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2);
             tot_kmers[i] = kmers_d_vec[i].size();
         }
         #ifdef GPU_EXTRACT_TIMING

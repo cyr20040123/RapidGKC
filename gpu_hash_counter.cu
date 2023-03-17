@@ -616,7 +616,7 @@ __host__ byte* load_SKM_from_file (SKMStoreNoncon &skms_store) {
     return d_skms;
 }
 
-void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kmers, cudaStream_t &stream, int BpG=8, int TpB=256) {
+void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kmers, cudaStream_t &stream, int BpG2=8, int TpB2=256) {
     
     byte* d_skms;
     
@@ -641,8 +641,8 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kme
         } while (count);
     }
     // ---- GPU work ----
-    if (skms_store.tot_size_bytes / 4 <= BpG * TpB) GPU_Extract_Kmers<<<1, skms_store.tot_size_bytes/64+1, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k); // 强行debug // mountain of shit, do not touch
-    else GPU_Extract_Kmers<<<BpG, TpB, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
+    if (skms_store.tot_size_bytes / 4 <= BpG2 * TpB2) GPU_Extract_Kmers<<<1, skms_store.tot_size_bytes/64+1, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k); // 强行debug // mountain of shit, do not touch
+    else GPU_Extract_Kmers<<<BpG2, TpB2, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
     
     // unsigned long long kmer_cnt;
     // CUDA_CHECK(cudaMemcpyAsync(&kmer_cnt, d_kmer_store_pos, sizeof(unsigned long long), cudaMemcpyDeviceToHost, stream));
@@ -675,8 +675,8 @@ size_t kmc_counting_GPU_streams (T_kvalue k,
         if (skms_stores[i]->tot_size_bytes != 0) {
             // ---- 0. Extract kmers from SKMStore: ---- 
             CUDA_CHECK(cudaMallocAsync((void**)&d_kmers[i], sizeof(T_kmer) * skms_stores[i]->kmer_cnt, streams[i]));
-            Extract_Kmers(*skms_stores[i], k, d_kmers[i], streams[i], gpars.BpG, gpars.TpB);
-            distinct_cnt[i] = construct_hashtab_gpu_stream (d_kmers[i], skms_stores[i]->kmer_cnt, true, streams[i], gpars.BpG, gpars.TpB);
+            Extract_Kmers(*skms_stores[i], k, d_kmers[i], streams[i], gpars.BpG2, gpars.TpB2);
+            distinct_cnt[i] = construct_hashtab_gpu_stream (d_kmers[i], skms_stores[i]->kmer_cnt, true, streams[i], gpars.BpG2, gpars.TpB2);
         }
     }
     for (i=0; i<n_streams; i++) {

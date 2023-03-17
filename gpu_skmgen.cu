@@ -525,7 +525,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
     for (i=0; i<gpars.n_streams; i++)
         CUDA_CHECK(cudaStreamCreate(&streams[i]));
     
-    T_read_cnt items_per_stream = gpars.NUM_BLOCKS_PER_GRID * gpars.NUM_THREADS_PER_BLOCK * gpars.items_stream_mul;
+    T_read_cnt items_per_stream = gpars.BpG1 * gpars.TpB1 * gpars.items_stream_mul;
     T_read_cnt cur_read = 0, end_read;
     i = 0; // i for which stream
     string logs = "   GPU "+to_string(gpuid)+":";
@@ -570,14 +570,14 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             #ifdef KERNEL_TIME_MEASUREMENT
             WallClockTimer wct;
             #endif
-            MoveOffset<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>>(
+            MoveOffset<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>>(
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_offs, 0
             );
             #ifdef KERNEL_TIME_MEASUREMENT
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             #endif
             
-            GPU_HPCEncoding<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>>(
+            GPU_HPCEncoding<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>>(
                 gpu_data[i].reads_cnt,  gpu_data[i].d_read_len, 
                 gpu_data[i].d_reads,    gpu_data[i].d_read_offs, 
                 HPC,                    gpu_data[i].d_hpc_orig_pos
@@ -587,7 +587,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             
             WallClockTimer wct2;
             #endif
-            GPU_GenMinimizer<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>>(
+            GPU_GenMinimizer<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>>(
                 gpu_data[i].reads_cnt,  gpu_data[i].d_read_len,
                 gpu_data[i].d_reads,    gpu_data[i].d_read_offs,
                 gpu_data[i].d_minimizers, 
@@ -598,7 +598,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             time_filter += wct2.stop(true);
             #endif
             
-            GPU_GenSKMOffs<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 2*SKM_partitions*sizeof(unsigned int), streams[i]>>>(
+            GPU_GenSKMOffs<<<gpars.BpG1, gpars.TpB1, 2*SKM_partitions*sizeof(unsigned int), streams[i]>>>(
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_len, gpu_data[i].d_read_offs, 
                 gpu_data[i].d_minimizers,
                 gpu_data[i].d_superkmer_offs,
@@ -612,7 +612,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             time_all += wct.stop(true);
             #endif
             
-            GPU_ReadCompression<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>>(
+            GPU_ReadCompression<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>>(
                 gpu_data[i].d_reads, gpu_data[i].d_read_offs, gpu_data[i].d_read_len, gpu_data[i].reads_cnt
             );
             
@@ -652,7 +652,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_skmpart_offs, host_data[i].skmpart_offs, sizeof(T_CSR_cap) * (SKM_partitions+1), cudaMemcpyHostToDevice, streams[i]));
 
             // ---- GPU extract skms ----
-            GPU_ExtractSKM<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>> (
+            GPU_ExtractSKM<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>> (
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_len, gpu_data[i].d_read_offs, gpu_data[i].d_reads,
                 gpu_data[i].d_minimizers, gpu_data[i].d_superkmer_offs, 
                 gpu_data[i].d_store_pos, /*gpu_data[i].d_skm_cnt, */gpu_data[i].d_skm_store_csr, gpu_data[i].d_skmpart_offs,

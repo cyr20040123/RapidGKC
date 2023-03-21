@@ -262,7 +262,7 @@ void KmerCounting_TP(CUDAParams &gpars) {
     assert(i_part >= PAR.SKM_partitions);
      */
     future<size_t> distinct_kmer_cnt[PAR.SKM_partitions];
-    ThreadPool<size_t> tp(PAR.N_threads,PAR.N_threads,{0,PAR.N_threads,0,PAR.max_threads_per_gpu});
+    ThreadPool<size_t> tp(PAR.N_threads,PAR.N_threads); //,{0,PAR.N_threads,0,PAR.max_threads_per_gpu});
     int j;
     for (i=0; i<PAR.SKM_partitions; i=j) {
         long long vram_avail = gpars.vram[0];

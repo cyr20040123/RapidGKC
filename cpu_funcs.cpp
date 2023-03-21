@@ -385,7 +385,7 @@ void sort_kmers (T_kmer *kmers, const T_skm_partsize n_kmers, const T_kvalue K_k
     return;
 }
 #else
-void sort_kmers (T_kmer *&kmers, const T_skm_partsize n_kmers, const T_kvalue K_kmer, uint8_t *&_raw_input, unsigned int n_threads = 1) {
+void sort_kmers (T_kmer *&kmers, const T_skm_partsize n_kmers, const T_kvalue K_kmer, uint8_t *&_raw_input, unsigned int n_threads) {
     uint32_t key_size = sizeof(T_kmer);
     
     // auto _raw_input = new uint8_t[n_kmers * sizeof(T_kmer) + raduls::ALIGNMENT];

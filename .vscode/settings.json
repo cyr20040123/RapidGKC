@@ -77,7 +77,8 @@
         "typeinfo": "cpp",
         "valarray": "cpp",
         "variant": "cpp",
-        "*.ipp": "cpp"
+        "*.ipp": "cpp",
+        "__nullptr": "cpp"
     },
     "C_Cpp.default.includePath": [
         "/usr/local/cuda-11.8/include/"

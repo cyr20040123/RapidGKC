@@ -425,6 +425,11 @@ public:
         _started_threads.push_back(std::thread(&ReadLoader::_STEP1_load_from_file, this));
         _started_threads.push_back(std::thread(&ReadLoader::_STEP2_find_newline, this));
         _started_threads.push_back(std::thread(&ReadLoader::_STEP3_extract_read, this));
+        // if (_n_threads_consumer >= 16) {
+        //     ThreadPool<void>::set_thread_affinity(_started_threads[0], 1, _n_threads_consumer);
+        //     ThreadPool<void>::set_thread_affinity(_started_threads[1], 1, _n_threads_consumer);
+        //     ThreadPool<void>::set_thread_affinity(_started_threads[2], 0);
+        // }
         #ifdef STEP3P
         _started_threads.push_back(std::thread(&ReadLoader::_STEP3PLUS, this));
         #endif
@@ -463,6 +468,8 @@ public:
         
         T_read_len n_read_loaded = 0;
 
+        // ThreadAffinity ta;
+        // if (worker_threads >= 16) ta={1, worker_threads, 0, 2}; // TODO: pass GPU threads
         ThreadPool<void> tp(worker_threads, worker_threads); // +(worker_threads >= 8 ? worker_threads / 4 : 2));
         ReadLoader rl(filenames, K_kmer, batch_size, buffer_size_MB, max_buffer_size_MB, worker_threads);
         rl.start_load_reads();

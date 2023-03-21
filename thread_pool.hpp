@@ -150,6 +150,23 @@ public:
         std::unique_lock<std::mutex> tmp_lck(_holder_mtx);
         _holder_cv.wait(tmp_lck, [=](){return this->_not_busy();});
     }
+    // static void set_thread_affinity(int core = 0) {
+    //     assert(core < std::thread::hardware_concurrency());
+    //     cpu_set_t cpuset;
+    //     CPU_ZERO(&cpuset);
+    //     CPU_SET(core, &cpuset);
+    //     assert(!pthread_setaffinity_np(std::this_thread::get_id()._M_thread, sizeof(cpu_set_t), &cpuset));
+    //     std::cerr<<"bind thread to core "<<core<<std::endl;
+    // }
+    static void set_thread_affinity(std::thread &t, int core_beg = 0, int core_end = -1) {
+        assert(core_beg < std::thread::hardware_concurrency());
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        if (core_end == -1) CPU_SET(core_beg, &cpuset);
+        else for (int i=core_beg; i<core_end; i++) CPU_SET(i, &cpuset);
+        assert(!pthread_setaffinity_np(t.native_handle(), sizeof(cpu_set_t), &cpuset));
+        std::cerr<<"bind thread to core "<<core_beg<<"-"<<core_end<<std::endl;
+    }
 };
 
 #endif

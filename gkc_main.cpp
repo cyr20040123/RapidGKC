@@ -178,6 +178,11 @@ size_t p2_kmc (int tid, int max_streams, atomic<int> &i_part, vector<size_t> &di
     return j-i;
 }
 */
+#define TIMING_CUDAMEMCPY
+#ifdef TIMING_CUDAMEMCPY
+atomic<int> debug_cudacp_timing;
+#endif
+
 void KmerCounting_TP(CUDAParams &gpars) {
     // GPUReset(gpars.device_id); // must before not after pinned memory allocation
 
@@ -261,6 +266,9 @@ void KmerCounting_TP(CUDAParams &gpars) {
     tp.finish();
     assert(i_part >= PAR.SKM_partitions);
      */
+    #ifdef TIMING_CUDAMEMCPY
+    debug_cudacp_timing = 0;
+    #endif
     future<size_t> distinct_kmer_cnt[PAR.SKM_partitions];
     ThreadPool<size_t> tp(PAR.N_threads,PAR.N_threads); //,{0,PAR.N_threads,0,PAR.max_threads_per_gpu});
     int j;
@@ -301,6 +309,10 @@ void KmerCounting_TP(CUDAParams &gpars) {
         }
     }
     std::cerr<<endl;
+    
+    #ifdef TIMING_CUDAMEMCPY
+    cerr<<"debug_cudacp_timing: "<< debug_cudacp_timing <<endl;
+    #endif
     
     logger->log("Total number of distinct kmers: "+to_string(distinct_kmer_cnt_tot), Logger::LV_NOTICE);
     

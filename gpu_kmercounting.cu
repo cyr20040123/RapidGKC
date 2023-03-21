@@ -324,6 +324,10 @@ float Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* d_kme
     return;
 }
 
+#ifdef TIMING_CUDAMEMCPY
+extern atomic<int> debug_cudacp_timing;
+#endif
+
 __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
                                vector<SKMStoreNoncon*> skms_stores, CUDAParams &gpars,
                                T_kmer_cnt kmer_min_freq, T_kmer_cnt kmer_max_freq,
@@ -364,6 +368,7 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             // if (GPU_compression) Extract_Kmers_Compressed(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2, gpuid);
             #ifdef TIMING_CUDAMEMCPY
             float timing = Extract_Kmers(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2);
+            debug_cudacp_timing += (int)timing;
             timing = skms_stores[i]->tot_size_bytes / (timing) / 1e6;
             logs += " [Eff.BW "+to_string(timing)+" GB/s]";
             #else

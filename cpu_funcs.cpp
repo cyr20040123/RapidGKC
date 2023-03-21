@@ -266,7 +266,8 @@ void GenSuperkmerCPU (vector<ReadPtr> &reads,
     for (ReadPtr &_read: reads) {
         // HPC encoding:
         T_read_len len = _read.len;
-        byte *read = new byte[len];//
+        // byte *read = new byte[len];//
+        byte *read = (byte*)_read.read;
         if (HPC) len = _hpc_encoding(len, _read.read, read);
         else memcpy(read, _read.read, len);
         // Gen SKM offs:
@@ -280,7 +281,7 @@ void GenSuperkmerCPU (vector<ReadPtr> &reads,
             SKM_BUFFER_SIZE, skm_cnt, kmer_cnt, skm_buffer, skm_buf_pos,
             skm_partition_stores);
 
-        delete [] read;//
+        // delete [] read;//
         delete [] skm_offs;//
         delete [] minimizers;//
     }

@@ -1,4 +1,5 @@
 // #define GPU_EXTRACT_TIMING
+#define TIMING_CUDAMEMCPY
 
 #define CUDA_CHECK(call) \
 if((call) != cudaSuccess) { \
@@ -251,10 +252,15 @@ __host__ byte* load_SKM_from_file (SKMStoreNoncon &skms_store) {
     return d_skms;
 }
 
-void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kmers, cudaStream_t &stream, int BpG2=8, int TpB2=256) {
+float Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* d_kmers, cudaStream_t &stream, int BpG2=8, int TpB2=256) {
     // cudaStream_t stream;
     // CUDA_CHECK(cudaStreamCreate(&stream));
     
+    #ifdef TIMING_CUDAMEMCPY
+    cudaEvent_t memcpy_start, memcpy_end;
+    cudaEventCreate(&memcpy_start); cudaEventCreate(&memcpy_end);
+    #endif
+
     byte* d_skms;
     
     unsigned long long *d_kmer_store_pos;
@@ -269,6 +275,11 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kme
         int i;
         // byte *d_store_pos = d_skms;
         size_t d_store_pos = 0;
+    
+        #ifdef TIMING_CUDAMEMCPY
+        cudaEventRecord(memcpy_start, stream);
+        #endif
+    
         #ifdef SKMSTOREV1
         for (i=0; i<skms_store.skm_chunk_bytes.size(); i++) {
             CUDA_CHECK(cudaMemcpyAsync(d_skms+d_store_pos, skms_store.skm_chunks[i], skms_store.skm_chunk_bytes[i], cudaMemcpyHostToDevice, stream));
@@ -288,6 +299,10 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kme
             }
         } while (count);
         #endif
+
+        #ifdef TIMING_CUDAMEMCPY
+        cudaEventRecord(memcpy_end, stream);
+        #endif
     }
     // cerr<<"debug2"<<endl;
     // CUDA_CHECK(cudaStreamSynchronize(stream));
@@ -298,6 +313,14 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kme
     
     CUDA_CHECK(cudaFreeAsync(d_skms, stream));
     CUDA_CHECK(cudaFreeAsync(d_kmer_store_pos, stream));
+    
+    #ifdef TIMING_CUDAMEMCPY
+    float cudamemcpy_time;
+    cudaEventSynchronize(memcpy_end);
+    cudaEventElapsedTime(&cudamemcpy_time, memcpy_start, memcpy_end);
+    return cudamemcpy_time;
+    #endif
+
     return;
 }
 
@@ -339,7 +362,13 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             kmers_d_vec[i] = thrust::device_vector<T_kmer>(skms_stores[i]->kmer_cnt);
             T_kmer *d_kmers_data = thrust::raw_pointer_cast(kmers_d_vec[i].data());
             // if (GPU_compression) Extract_Kmers_Compressed(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2, gpuid);
+            #ifdef TIMING_CUDAMEMCPY
+            float timing = Extract_Kmers(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2);
+            timing = skms_stores[i]->tot_size_bytes / (timing) / 1e6;
+            logs += " [Eff.BW "+to_string(timing)+" GB/s]";
+            #else
             /*else*/ Extract_Kmers(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2);
+            #endif
             tot_kmers[i] = kmers_d_vec[i].size();
         }
         #ifdef GPU_EXTRACT_TIMING

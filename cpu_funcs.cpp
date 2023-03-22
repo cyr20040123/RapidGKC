@@ -225,7 +225,7 @@ void gen_skms (byte *read, T_read_len len, T_read_len *skm_offs, T_minimizer *mi
         skm_size_bytes = _skm_bytes_required(skm_offs[i], skm_offs[i+1], K_kmer);
         if (skm_buf_pos[partition] + skm_size_bytes >= buffer_size) {
             // save skms to SKMStoreNoncon
-            SKMStoreNoncon::save_skms(skm_partition_stores[partition], skm_cnt[partition], kmer_cnt[partition], skm_buffer[partition], skm_buf_pos[partition], buffer_size);//
+            SKMStoreNoncon::save_skms(skm_partition_stores[partition], skm_cnt[partition], kmer_cnt[partition], skm_buffer[partition], skm_buf_pos[partition], buffer_size, true);//
             skm_buffer[partition] = new byte [buffer_size];//
             skm_buf_pos[partition] = 0;
             skm_cnt[partition] = 0;
@@ -288,7 +288,7 @@ void GenSuperkmerCPU (vector<ReadPtr> &reads,
     
     // dump skm buffer to store
     for (i=0; i<SKM_partitions; i++)
-        SKMStoreNoncon::save_skms(skm_partition_stores[i], skm_cnt[i], kmer_cnt[i], skm_buffer[i], skm_buf_pos[i], SKM_BUFFER_SIZE);//
+        SKMStoreNoncon::save_skms(skm_partition_stores[i], skm_cnt[i], kmer_cnt[i], skm_buffer[i], skm_buf_pos[i], SKM_BUFFER_SIZE, true);//
         // delete skm_buffer[i]; // No need to delete here. The right is passed to func save_skms.
     logger->log("-- BATCH  CPU (T"+to_string(tid)+"): #reads: "+to_string(reads.size())+" --  "+to_string(wct.stop()));
 }

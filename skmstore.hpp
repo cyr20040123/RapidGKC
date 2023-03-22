@@ -27,6 +27,7 @@ public:
     int id = -1;
     bool file_closed;
     string filename;
+    int flush_cnt = 0;
 
     // no compression
     #ifdef SKMSTOREV1
@@ -78,6 +79,15 @@ public:
             #endif
             file_closed = false;
         }
+    }
+    void _add_skms_to_file (byte* skms_chunk, size_t data_bytes, size_t b_skm_cnt, size_t b_kmer_cnt, bool flush = false) {
+        data_mtx.lock();
+        _write_to_file (skms_chunk, data_bytes);
+        if (flush && flush_cnt++ > 8192) {fflush(fp); flush_cnt=0;}
+        data_mtx.unlock();
+        this->tot_size_bytes += data_bytes;
+        this->skm_cnt += b_skm_cnt;
+        this->kmer_cnt += b_kmer_cnt;
     }
     /// @brief add skms directly from a chunk
     /// @param skms_chunk the chunk which stores multiple skms
@@ -167,33 +177,36 @@ public:
      * @param  {size_t} data_bytes          : 
      * @param  {int} buf_size               : 
      */
-    static void save_skms (SKMStoreNoncon* skms_store, T_skm_partsize skm_cnt, T_skm_partsize kmer_cnt, byte *skm_data, size_t data_bytes, const int buf_size = 0) {
+    static void save_skms (SKMStoreNoncon* skms_store, T_skm_partsize skm_cnt, T_skm_partsize kmer_cnt, byte *skm_data, size_t data_bytes, const int buf_size = 0, bool flush = false) {
         if (data_bytes == 0) {
             delete [] skm_data;
             return;
         }
         byte *tmp;
-        if (data_bytes < buf_size / 4 * 3) { // TODO: space or time
+        if (skms_store->to_file) {
+            skms_store->_add_skms_to_file(skm_data, data_bytes, skm_cnt, kmer_cnt, flush);
+            delete [] skm_data;
+        } else if (data_bytes < buf_size / 4 * 3) { // TODO: space or time
             tmp = new byte [data_bytes];
             memcpy(tmp, skm_data, data_bytes);
             skms_store->add_skms(tmp, data_bytes, skm_cnt, kmer_cnt);
             delete [] skm_data;
-            if (skms_store->to_file) delete tmp;
-            else {
+            // if (skms_store->to_file) delete tmp;
+            // else {
                 skms_store->delete_list.enqueue(tmp);
                 // skms_store->dl_mtx.lock();
                 // skms_store->delete_list.push_back(tmp);
                 // skms_store->dl_mtx.unlock();
-            }
+            // }
         } else {
             skms_store->add_skms(skm_data, data_bytes, skm_cnt, kmer_cnt);
-            if (skms_store->to_file) delete [] skm_data;
-            else {
+            // if (skms_store->to_file) delete [] skm_data;
+            // else {
                 skms_store->delete_list.enqueue(skm_data);
                 // skms_store->dl_mtx.lock();
                 // skms_store->delete_list.push_back(skm_data);
                 // skms_store->dl_mtx.unlock();
-            }
+            // }
         }
     }
 };

@@ -523,7 +523,7 @@ size_t* construct_hashtab_gpu_stream (T_key *keys, size_t num_of_keys, bool keys
 
 #define NULL_POS 0xFFFFFFFFFFFFFFFFUL
 
-__device__ void _process_bytes (size_t beg, size_t end, byte* d_skms, T_kmer *d_kmers, unsigned long long *d_kmer_store_pos, T_kvalue k) {
+__device__ void _process_bytes (size_t beg, size_t end, u_char* d_skms, T_kmer *d_kmers, unsigned long long *d_kmer_store_pos, T_kvalue k) {
     // if called, stop until at least one skm is processed whatever end is exceeded
     // T_kmer kmer_mask = T_kmer(0xffffffffffffffff>>(64-k*2));
     T_kmer kmer_mask = (T_kmer)(((T_kmer)(-1)) >> (sizeof(T_kmer)*8-k*2));
@@ -532,9 +532,9 @@ __device__ void _process_bytes (size_t beg, size_t end, byte* d_skms, T_kmer *d_
     T_kvalue kmer_bases; // effective bases
     unsigned long long store_pos;
 
-    byte indicator, ii;
-    byte beg_selector[4] = {0, 0b00000011, 0b00001111, 0b00111111};
-    byte end_selector[4] = {0, 0b00110000, 0b00111100, 0b00111111};
+    u_char indicator, ii;
+    u_char beg_selector[4] = {0, 0b00000011, 0b00001111, 0b00111111};
+    u_char end_selector[4] = {0, 0b00110000, 0b00111100, 0b00111111};
     // Optimization: use ulonglong4 to store 4 kmers at a time
     for (i = beg; i < end; i++) { // i: byte
         // generate the first k-mer
@@ -568,8 +568,8 @@ __device__ void _process_bytes (size_t beg, size_t end, byte* d_skms, T_kmer *d_
         }
     }
 }
-__device__ size_t _find_full_nonfull_pos (size_t beg, size_t end, byte* d_skms) {
-    byte FN_pos_found = 0; // 0: not found, 1: find full byte, 2: find non-full block after a full
+__device__ size_t _find_full_nonfull_pos (size_t beg, size_t end, u_char* d_skms) {
+    u_char FN_pos_found = 0; // 0: not found, 1: find full byte, 2: find non-full block after a full
     size_t i;
     for (i = beg; (FN_pos_found<2) & (i < end); i++) {
         FN_pos_found |= (d_skms[i] >= 0b11000000); // if full block found, beg_pos_found=1
@@ -578,7 +578,7 @@ __device__ size_t _find_full_nonfull_pos (size_t beg, size_t end, byte* d_skms) 
     return (FN_pos_found>=2) * i + (FN_pos_found<2) * NULL_POS; // return the next position after a full and nonfull
 }
 
-__global__ void GPU_Extract_Kmers (byte* d_skms, size_t tot_bytes, T_kmer *d_kmers, unsigned long long *d_kmer_store_pos, T_kvalue k) {
+__global__ void GPU_Extract_Kmers (u_char* d_skms, size_t tot_bytes, T_kmer *d_kmers, unsigned long long *d_kmer_store_pos, T_kvalue k) {
     int n_t = blockDim.x * gridDim.x;
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     size_t bytes_per_thread = (tot_bytes + n_t - 1) / n_t; // min: 1
@@ -601,14 +601,14 @@ __global__ void GPU_Extract_Kmers (byte* d_skms, size_t tot_bytes, T_kmer *d_kme
     return;
 }
 
-__host__ byte* load_SKM_from_file (SKMStoreNoncon &skms_store) {
-    byte* d_skms;
+__host__ u_char* load_SKM_from_file (SKMStoreNoncon &skms_store) {
+    u_char* d_skms;
     CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes));
     FILE* fp;
     fp = fopen(skms_store.filename.c_str(), "rb");
     assert(fp);
-    byte* tmp;
-    tmp = new byte[skms_store.tot_size_bytes];
+    u_char* tmp;
+    tmp = new u_char[skms_store.tot_size_bytes];
     assert(fread(tmp, 1, skms_store.tot_size_bytes, fp)==skms_store.tot_size_bytes);
     CUDA_CHECK(cudaMemcpy(d_skms, tmp, skms_store.tot_size_bytes, cudaMemcpyHostToDevice));
     delete tmp;
@@ -618,7 +618,7 @@ __host__ byte* load_SKM_from_file (SKMStoreNoncon &skms_store) {
 
 void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kmers, cudaStream_t &stream, int BpG2=8, int TpB2=256) {
     
-    byte* d_skms;
+    u_char* d_skms;
     
     unsigned long long *d_kmer_store_pos;
     CUDA_CHECK(cudaMallocAsync((void**) &(d_kmer_store_pos), sizeof(unsigned long long), stream));

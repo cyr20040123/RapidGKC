@@ -1,6 +1,9 @@
 
 # Source Files
 
+skmstore.hpp (use MoodyCamel concurrent queue to store skm chunks)
+skmstore2.hpp (use std::string to store skm chunks consecutively)
+
 ## RADULS
 ```
 use_raduls.h

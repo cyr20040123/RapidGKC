@@ -385,7 +385,7 @@ __global__ void GPU_ReadCompression(_in_ _out_ unsigned char *d_reads, _in_ T_CS
     unsigned char* cur_read;
     T_read_len len;
     uchar3 c4; // 3 = BYTE_BASES
-    byte tmp;
+    u_char tmp;
     T_read_len i, j, last_byte_bases;
     
     // each block process one read:
@@ -430,11 +430,11 @@ __global__ void GPU_ExtractSKM (
     _in_ T_read_cnt d_reads_cnt, _in_ T_read_len *d_read_len, _in_ T_CSR_cap *d_read_offs, _in_ unsigned char *d_reads,
     _in_ T_minimizer *d_minimizers,
     _in_ T_read_len *d_skm_offs_inread,
-    _in_ T_skm_partsize *d_store_pos, /*_in_ T_skm_partsize *d_skm_cnt, */_out_ byte *d_skm_store_csr, _in_ T_CSR_cap *d_skmpart_offs, 
+    _in_ T_skm_partsize *d_store_pos, /*_in_ T_skm_partsize *d_skm_cnt, */_out_ u_char *d_skm_store_csr, _in_ T_CSR_cap *d_skmpart_offs, 
     const T_kvalue K_kmer, const T_kvalue P_minimizer, const int SKM_partitions
 ) {
     T_read_len *cur_read_skm_offs;      // skm offs pointer of current read
-    byte *cur_read;
+    u_char *cur_read;
     T_read_len cur_read_len;            // length in bases
     
     int partition;                      // the partition of the current skm
@@ -545,7 +545,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             // ---- cudaMalloc ----
             // reads (data, offs, len, hpc), minmers, skms (offs, part_byte, cnt)
             // ~ 5000 reads / GB
-            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_reads), sizeof(byte) * (batch_size[i]+8), streams[i]));// +8 for uchar4 access overflow // 8192 threads(reads) * 20 KB/read     = 160MB VRAM
+            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_reads), sizeof(u_char) * (batch_size[i]+8), streams[i]));// +8 for uchar4 access overflow // 8192 threads(reads) * 20 KB/read     = 160MB VRAM
             CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_read_offs), sizeof(T_CSR_cap) * (gpu_data[i].reads_cnt+1), streams[i]));    // 8192 threads(reads) * 8 B/read       =  64MB VRAM
             CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_read_len), sizeof(T_read_len) * (gpu_data[i].reads_cnt), streams[i]));      // 8192 threads(reads) * 4 B/read       =  32MB VRAM
             if (HPC) {// cost a lot VRAM
@@ -659,7 +659,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 K_kmer, P_minimizer, SKM_partitions
             );
             // -- Malloc on host for SKM storage --
-            host_data[i].skm_store_csr = new byte[host_data[i].tot_skm_bytes];//
+            host_data[i].skm_store_csr = new u_char[host_data[i].tot_skm_bytes];//
         }
 
         // ==== Copy SKMs Back to CPU ====

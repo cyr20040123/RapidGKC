@@ -16,7 +16,7 @@ using namespace std;
 
 struct SKM {
     size_t chunk_bytes;
-    byte* skm_chunk;
+    u_char* skm_chunk;
 };
 
 class SKMStoreNoncon {
@@ -32,7 +32,7 @@ public:
     // no compression
     #ifdef SKMSTOREV1
     vector<size_t> skm_chunk_bytes;
-    vector<const byte*> skm_chunks;
+    vector<const u_char*> skm_chunks;
     
     size_t tot_size_bytes = 0;
     size_t skm_cnt = 0;
@@ -42,7 +42,7 @@ public:
     atomic<size_t> tot_size_bytes{0};
     atomic<size_t> skm_cnt{0};
     atomic<size_t> kmer_cnt{0};
-    // byte* skm_all_concat;
+    // u_char* skm_all_concat;
     #endif
     
     mutex data_mtx;
@@ -52,10 +52,10 @@ public:
     // size_t tot_size_compressed = 0;
     
     // mutex dl_mtx;
-    // vector<const byte*> delete_list;
-    moodycamel::ConcurrentQueue<byte*> delete_list;
+    // vector<const u_char*> delete_list;
+    moodycamel::ConcurrentQueue<u_char*> delete_list;
     
-    void _write_to_file(const byte* data, size_t size) {
+    void _write_to_file(const u_char* data, size_t size) {
         #ifdef DEBUG
         assert(file_closed == false);
         #endif
@@ -80,7 +80,7 @@ public:
             file_closed = false;
         }
     }
-    void _add_skms_to_file (byte* skms_chunk, size_t data_bytes, size_t b_skm_cnt, size_t b_kmer_cnt, bool flush = false) {
+    void _add_skms_to_file (u_char* skms_chunk, size_t data_bytes, size_t b_skm_cnt, size_t b_kmer_cnt, bool flush = false) {
         data_mtx.lock();
         _write_to_file (skms_chunk, data_bytes);
         if (flush && flush_cnt++ > 8192) {fflush(fp); flush_cnt=0;}
@@ -93,7 +93,7 @@ public:
     /// @param skms_chunk the chunk which stores multiple skms
     /// @param data_bytes the uncompressed size in bytes of this chunk
     /// @param compressed_bytes the compressed size in bytes of this chunk
-    void add_skms (byte* skms_chunk, size_t data_bytes, size_t b_skm_cnt, size_t b_kmer_cnt/*, size_t compressed_bytes = 0*/) {
+    void add_skms (u_char* skms_chunk, size_t data_bytes, size_t b_skm_cnt, size_t b_kmer_cnt/*, size_t compressed_bytes = 0*/) {
         #ifdef SKMSTOREV1
         data_mtx.lock();
         #endif
@@ -127,7 +127,7 @@ public:
     // bool is_compressed() {return skm_chunk_compressed_bytes.size();}
     void clear_skm_data () {
         size_t count;
-        byte* items[1024];
+        u_char* items[1024];
         int i;
         do {
             count = delete_list.try_dequeue_bulk(items, 1024);
@@ -138,7 +138,7 @@ public:
 
     // #ifndef SKMSTOREV1
     // void concatenate_skm_chunks () { // TODO HERE, efficient for short read dataset
-    //     skm_all_concat = new byte[tot_size_bytes];
+    //     skm_all_concat = new u_char[tot_size_bytes];
     //     SKM data[1024];
     //     size_t count;
     //     do {
@@ -158,7 +158,7 @@ public:
     /// @param kmer_cnt number of kmers of each partition
     /// @param skmpart_offs offset of each skm partition
     /// @param skm_store_csr skm partitions in csr format
-    static void save_batch_skms (vector<SKMStoreNoncon*> &skms_stores, T_skm_partsize *skm_cnt, T_skm_partsize *kmer_cnt, T_CSR_cap *skmpart_offs, byte *skm_store_csr) {
+    static void save_batch_skms (vector<SKMStoreNoncon*> &skms_stores, T_skm_partsize *skm_cnt, T_skm_partsize *kmer_cnt, T_CSR_cap *skmpart_offs, u_char *skm_store_csr) {
         // memory layout of skm_store_csr:
         // [<part0><part1><part2><...>]
         int i;
@@ -173,21 +173,21 @@ public:
      * @param  {SKMStoreNoncon*} skms_store : 
      * @param  {T_skm_partsize} skm_cnt     : 
      * @param  {T_skm_partsize} kmer_cnt    : 
-     * @param  {byte*} skm_data             : Will be deleted if <skm_to_file> is enabled.
+     * @param  {u_char*} skm_data             : Will be deleted if <skm_to_file> is enabled.
      * @param  {size_t} data_bytes          : 
      * @param  {int} buf_size               : 
      */
-    static void save_skms (SKMStoreNoncon* skms_store, T_skm_partsize skm_cnt, T_skm_partsize kmer_cnt, byte *skm_data, size_t data_bytes, const int buf_size = 0, bool flush = false) {
+    static void save_skms (SKMStoreNoncon* skms_store, T_skm_partsize skm_cnt, T_skm_partsize kmer_cnt, u_char *skm_data, size_t data_bytes, const int buf_size = 0, bool flush = false) {
         if (data_bytes == 0) {
             delete [] skm_data;
             return;
         }
-        byte *tmp;
+        u_char *tmp;
         if (skms_store->to_file) {
             skms_store->_add_skms_to_file(skm_data, data_bytes, skm_cnt, kmer_cnt, flush);
             delete [] skm_data;
         } else if (data_bytes < buf_size / 4 * 3) { // TODO: space or time
-            tmp = new byte [data_bytes];
+            tmp = new u_char [data_bytes];
             memcpy(tmp, skm_data, data_bytes);
             skms_store->add_skms(tmp, data_bytes, skm_cnt, kmer_cnt);
             delete [] skm_data;

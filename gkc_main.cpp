@@ -214,10 +214,6 @@ void KmerCounting_TP(CUDAParams &gpars) {
         [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){phase1(reads, gpars, skm_part_vec, tid);},
         PAR.N_threads, PAR.read_files, PAR.Batch_read_loading, PAR.Buffer_size_MB*PAR.N_threads);
     
-    double p1_time = wct1.stop();
-    logger->log("**** All reads loaded and SKMs generated (Phase 1 ends) ****", Logger::LV_NOTICE);
-    logger->log("     Phase 1 Time: " + to_string(p1_time) + " sec", Logger::LV_NOTICE);
-
     size_t skm_tot_cnt = 0, skm_tot_bytes = 0, kmer_tot_cnt = 0;
     for(i=0; i<PAR.SKM_partitions; i++) {
         kmer_tot_cnt += skm_part_vec[i]->kmer_cnt;
@@ -225,6 +221,11 @@ void KmerCounting_TP(CUDAParams &gpars) {
         skm_tot_bytes += skm_part_vec[i]->tot_size_bytes;
         if (PAR.to_file) skm_part_vec[i]->close_file();
     }
+    
+    double p1_time = wct1.stop();
+    logger->log("**** All reads loaded and SKMs generated (Phase 1 ends) ****", Logger::LV_NOTICE);
+    logger->log("     Phase 1 Time: " + to_string(p1_time) + " sec", Logger::LV_NOTICE);
+
     logger->log("SKM TOT CNT = " + to_string(skm_tot_cnt) + " BYTES = " + to_string(skm_tot_bytes), Logger::LV_INFO);
     logger->log("KMER TOT CNT = " + to_string(kmer_tot_cnt), Logger::LV_INFO);
 

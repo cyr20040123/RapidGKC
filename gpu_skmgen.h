@@ -4,20 +4,20 @@
 #define CUDA_CHECK(call) \
 if((call) != cudaSuccess) { \
     cudaError_t err = cudaGetLastError(); \
-    cerr << "CUDA error calling \""#call"\", code is " << err << ": " << cudaGetErrorString(err) << endl; \
+    std::cerr << "CUDA error calling \""#call"\", code is " << err << ": " << cudaGetErrorString(err) << std::endl; \
     exit(1); \
 }
 
 #define CUDA_CHECK_RETRY(call) \
 while((call) != cudaSuccess) { \
     cudaError_t err = cudaGetLastError(); \
-    cerr << "CUDA error calling \""#call"\", code is " << err << endl; \
-    this_thread::sleep_for(100ms); \
+    std::cerr << "CUDA error calling \""#call"\", code is " << err << std::endl; \
+    std::this_thread::sleep_for(100ms); \
 }
 
 #include "utilities.hpp"
 #include "types.h"
-#include "skmstore.hpp"
+#include "skmstore2.hpp"
 #include <vector>
 #include <thread>
 #include <atomic>
@@ -33,7 +33,7 @@ public:
     T_read_cnt n_reads;
     T_CSR_cap size_capacity; // bytes = char unit
     // PinnedCSR(vector<string> &reads);
-    PinnedCSR(vector<ReadPtr> &reads, bool keep_original=true);
+    PinnedCSR(std::vector<ReadPtr> &reads, bool keep_original=true);
     ~PinnedCSR();
     char* get_reads_CSR() {return reads_CSR;}
     T_CSR_cap* get_reads_offs() {return reads_offs;}
@@ -53,7 +53,7 @@ size_t GPUReset (int did);
 
 void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
     const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars, CountTask task,
-    const int SKM_partitions, vector<SKMStoreNoncon*> skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
+    const int SKM_partitions, std::vector<SKMStoreNoncon*> skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
     int tid
     /*atomic<size_t> skm_part_sizes[]*/);
 

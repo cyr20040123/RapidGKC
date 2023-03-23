@@ -2,6 +2,7 @@
 #include "utilities.hpp"
 #include <cstring>
 #include <algorithm>
+#include <thread>
 
 /*
 #include <fcntl.h>      // open
@@ -86,7 +87,7 @@ const unsigned char basemap_compl[256] = { // complement base
 
 extern Logger *logger;
 
-T_read_len _hpc_encoding (T_read_len len, const char* raw_read, byte* hpc_read) {
+T_read_len _hpc_encoding (T_read_len len, const char* raw_read, u_char* hpc_read) {
     T_read_len i_raw, i_hpc = 0;
     hpc_read[i_hpc] = raw_read[0];
     for (i_raw = 1; i_raw < len; i_raw++) {
@@ -117,7 +118,7 @@ bool _filter_and_assign_mm (_out_ T_minimizer &mm, T_minimizer pmer, T_minimizer
     }
     return new_mm_flag;
 }
-void _get_mm_of_kmer (byte* read, T_read_len i, const T_kvalue P_minimizer, const T_kvalue K_kmer, const T_minimizer mm_mask,
+void _get_mm_of_kmer (u_char* read, T_read_len i, const T_kvalue P_minimizer, const T_kvalue K_kmer, const T_minimizer mm_mask,
     _out_ T_minimizer &mm, _out_ T_minimizer &pmer, _out_ T_minimizer &pmer_rc, _out_ T_read_len &mm_beg) {
 
     mm = mm_mask;
@@ -140,7 +141,7 @@ void _get_mm_of_kmer (byte* read, T_read_len i, const T_kvalue P_minimizer, cons
     mm_beg += i;
     return;
 }
-T_read_len gen_skm_offs(byte* read, T_read_len len, const T_kvalue K_kmer, const T_kvalue P_minimizer, _out_ T_read_len *skm_offs, _out_ T_minimizer *minimizers) {
+T_read_len gen_skm_offs(u_char* read, T_read_len len, const T_kvalue K_kmer, const T_kvalue P_minimizer, _out_ T_read_len *skm_offs, _out_ T_minimizer *minimizers) {
     T_minimizer cur_mm, mm;
     T_minimizer pmer, pmer_rc;
     T_minimizer mm_mask = T_MM_MAX >> (sizeof(T_minimizer)*8 - 2*P_minimizer);
@@ -193,7 +194,7 @@ T_read_len gen_skm_offs(byte* read, T_read_len len, const T_kvalue K_kmer, const
     return skm_cnt;
 }
 
-void read_compression (byte *read, T_read_len len) {
+void read_compression (u_char *read, T_read_len len) {
     T_read_len i;
     for (i=0; i<=len-BYTE_BASES; i+=BYTE_BASES)
         read[i/BYTE_BASES] = (0b11<<6) | (basemap[read[i]]<<4) | (basemap[read[i+1]]<<2) | (basemap[read[i+2]]);
@@ -212,9 +213,9 @@ inline int _hash_partition (T_minimizer mm, int SKM_partitions) {
 inline T_skm_len _skm_bytes_required (T_read_len beg, T_read_len end, int k) {
     return ((beg%3) + end+(k-1)-beg + 3) / 3; // +3 because skm_3x requires an extra empty byte
 }
-void gen_skms (byte *read, T_read_len len, T_read_len *skm_offs, T_minimizer *minimizers, T_read_len n_skms, 
+void gen_skms (u_char *read, T_read_len len, T_read_len *skm_offs, T_minimizer *minimizers, T_read_len n_skms, 
     const T_kvalue K_kmer, const int SKM_partitions, const int buffer_size, 
-    _out_ T_skm_partsize *skm_cnt, _out_ T_skm_partsize *kmer_cnt, _out_ byte **skm_buffer, _out_ int *skm_buf_pos,
+    _out_ T_skm_partsize *skm_cnt, _out_ T_skm_partsize *kmer_cnt, _out_ u_char **skm_buffer, _out_ int *skm_buf_pos,
     _out_ vector<SKMStoreNoncon*> skm_partition_stores) {
     
     T_read_len i;
@@ -226,7 +227,7 @@ void gen_skms (byte *read, T_read_len len, T_read_len *skm_offs, T_minimizer *mi
         if (skm_buf_pos[partition] + skm_size_bytes >= buffer_size) {
             // save skms to SKMStoreNoncon
             SKMStoreNoncon::save_skms(skm_partition_stores[partition], skm_cnt[partition], kmer_cnt[partition], skm_buffer[partition], skm_buf_pos[partition], buffer_size, true);//
-            skm_buffer[partition] = new byte [buffer_size];//
+            skm_buffer[partition] = new u_char [buffer_size];//
             skm_buf_pos[partition] = 0;
             skm_cnt[partition] = 0;
             kmer_cnt[partition] = 0;
@@ -254,11 +255,11 @@ void GenSuperkmerCPU (vector<ReadPtr> &reads,
     const int SKM_BUFFER_SIZE = 32768; // 128M in total with 4096 partitions
     T_skm_partsize skm_cnt[SKM_partitions];
     T_skm_partsize kmer_cnt[SKM_partitions];
-    byte *skm_buffer[SKM_partitions]; // flush to store when buffer full
+    u_char *skm_buffer[SKM_partitions]; // flush to store when buffer full
     int skm_buf_pos[SKM_partitions];
     int i;
     for (i=0; i<SKM_partitions; i++) {
-        skm_buffer[i] = new byte[SKM_BUFFER_SIZE];//
+        skm_buffer[i] = new u_char[SKM_BUFFER_SIZE];//
         skm_buf_pos[i] = 0;
         skm_cnt[i] = 0;
         kmer_cnt [i] = 0;
@@ -266,8 +267,8 @@ void GenSuperkmerCPU (vector<ReadPtr> &reads,
     for (ReadPtr &_read: reads) {
         // HPC encoding:
         T_read_len len = _read.len;
-        // byte *read = new byte[len];//
-        byte *read = (byte*)_read.read;
+        // u_char *read = new u_char[len];//
+        u_char *read = (u_char*)_read.read;
         if (HPC) len = _hpc_encoding(len, _read.read, read);
         else memcpy(read, _read.read, len);
         // Gen SKM offs:
@@ -429,7 +430,7 @@ inline T_kmer _gen_rc_kmer (T_kmer kmer, T_kvalue k) {
     }
     return rc_kmer;
 }
-void _h_process_bytes (size_t beg, size_t end, byte* skms, T_kmer *kmers, atomic<size_t> *kmer_store_pos, T_kvalue k) {
+void _h_process_bytes (size_t beg, size_t end, u_char* skms, T_kmer *kmers, atomic<size_t> *kmer_store_pos, T_kvalue k) {
     if (end<=beg) return;
     
     // Add kmer_store_pos 128 at a time to avoid atomic overhead. When limited skm bytes left, add it 1 at a time. (2T: 800ms -> 100ms)
@@ -442,9 +443,9 @@ void _h_process_bytes (size_t beg, size_t end, byte* skms, T_kmer *kmers, atomic
     T_kmer kmer_mask = (T_kmer)(TKMAX>>(sizeof(T_kmer)*8-k*2));
     bool new_kmer_required = true;
     size_t i;
-    byte j; // = 0,1,2
-    byte indicator, tmp;
-    byte selector[4] = {0, 0b00000011, 0b00001111, 0b00111111};
+    u_char j; // = 0,1,2
+    u_char indicator, tmp;
+    u_char selector[4] = {0, 0b00000011, 0b00001111, 0b00111111};
     
     for (i=beg, j=0; i<end;) { // i: index of byte, j: which base (0,1,2) in the current byte
         if (new_kmer_required) {
@@ -508,9 +509,9 @@ void _h_process_bytes (size_t beg, size_t end, byte* skms, T_kmer *kmers, atomic
         }
     }
 }
-size_t _h_find_full_nonfull_pos (size_t beg, size_t end, byte* skms) {
+size_t _h_find_full_nonfull_pos (size_t beg, size_t end, u_char* skms) {
     if (beg == 0) return 0;
-    byte FN_pos_found = 0; // 0: not found, 1: find full byte, 2: find non-full block after a full
+    u_char FN_pos_found = 0; // 0: not found, 1: find full byte, 2: find non-full block after a full
     size_t i;
     for (i = beg; (FN_pos_found<2) && (i < end); i++) {
         if (skms[i] >= 0b11000000) FN_pos_found = 1;
@@ -518,7 +519,7 @@ size_t _h_find_full_nonfull_pos (size_t beg, size_t end, byte* skms) {
     }
     return FN_pos_found>=2 ? i : NULL_POS; // return the next position after a full and nonfull
 }
-void _extract_kmer_parallel (int n_t, int tid, byte* skms, size_t tot_bytes, T_kmer *kmers, atomic<size_t> *kmer_store_pos, T_kvalue k, atomic<size_t> *thread_offs) {
+void _extract_kmer_parallel (int n_t, int tid, u_char* skms, size_t tot_bytes, T_kmer *kmers, atomic<size_t> *kmer_store_pos, T_kvalue k, atomic<size_t> *thread_offs) {
     size_t bytes_per_thread = (tot_bytes + n_t - 1) / n_t; // min: 1
     thread_offs[tid] = _h_find_full_nonfull_pos (bytes_per_thread * tid, bytes_per_thread * (tid+1) < tot_bytes ? bytes_per_thread * (tid+1) : tot_bytes, skms);
     // cerr<<"thread_offs[tid]:"<<thread_offs[tid]<<endl;
@@ -528,8 +529,8 @@ void _extract_kmer_parallel (int n_t, int tid, byte* skms, size_t tot_bytes, T_k
 }
 void extract_kmers_cpu (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* kmers, unsigned int n_threads = 1) {
     // ---- Load SKMs ----
-    byte* skms;
-    skms = new byte[skms_store.tot_size_bytes];//
+    u_char* skms;
+    skms = new u_char[skms_store.tot_size_bytes];//
     size_t i;
     if (skms_store.to_file) {
         FILE* fp;
@@ -539,6 +540,9 @@ void extract_kmers_cpu (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* km
         fclose(fp);
     }
     else {
+        #ifdef _SKMSTORE2_HPP
+        memcpy(skms, skms_store.skms.c_str(), skms_store.tot_size_bytes);
+        #else
         size_t skm_store_pos = 0;
         SKM skm_bulk[1024];
         size_t count;
@@ -550,6 +554,7 @@ void extract_kmers_cpu (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* km
             }
         } while (count);
         assert(skms_store.tot_size_bytes == skm_store_pos);
+        #endif
     }
     atomic<size_t> kmer_store_pos{0};
 
@@ -648,7 +653,7 @@ int main() {
     char a[100]="AAAAAAAAACCCCCCCAAAAAAATGA";
     T_read_len skm_offs[100];
     T_minimizer minimizers[100];
-    int skm_cnt = gen_skm_offs((byte*)(a), strlen(a), 10, 5, skm_offs, minimizers);
+    int skm_cnt = gen_skm_offs((u_char*)(a), strlen(a), 10, 5, skm_offs, minimizers);
     for (int i=0; i<=skm_cnt; i++) {
         printf("%d,", skm_offs[i]);
     }
@@ -657,10 +662,10 @@ int main() {
         printf("%u,", minimizers[i]);
     }
     printf("\n");
-    read_compression((byte*)a, strlen(a));
+    read_compression((u_char*)a, strlen(a));
 
 
-    // byte b[100];
+    // u_char b[100];
     // memset(b,0,sizeof(b));
     // _hpc_encoding(strlen(a), a, b);
     // printf("%s\n",b);

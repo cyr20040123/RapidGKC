@@ -17,7 +17,7 @@ while((call) != cudaSuccess) { \
 
 #include "utilities.hpp"
 #include "types.h"
-#include "skmstore2.hpp"
+#include "skmstore.hpp"
 #include <vector>
 #include <thread>
 #include <atomic>

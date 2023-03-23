@@ -3,7 +3,7 @@
 
 #include <vector>
 #include "types.h"
-#include "skmstore2.hpp"
+#include "skmstore.hpp"
 
 void GenSuperkmerCPU (std::vector<ReadPtr> &reads,
     const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, 

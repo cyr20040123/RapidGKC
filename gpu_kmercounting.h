@@ -3,7 +3,7 @@
 
 #include "types.h"
 #include <vector>
-#include "skmstore2.hpp"
+#include "skmstore.hpp"
 #include "utilities.hpp"
 
 // size_t kmc_counting_GPU (T_kvalue k,

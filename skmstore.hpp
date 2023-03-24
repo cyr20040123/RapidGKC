@@ -186,7 +186,7 @@ public:
         if (skms_store->to_file) {
             skms_store->_add_skms_to_file(skm_data, data_bytes, skm_cnt, kmer_cnt, flush);
             delete [] skm_data;
-        } else if (data_bytes < buf_size / 4 * 3) { // TODO: space or time
+        } else if (data_bytes < buf_size) { // TODO: space or time
             tmp = new u_char [data_bytes];
             memcpy(tmp, skm_data, data_bytes);
             skms_store->add_skms(tmp, data_bytes, skm_cnt, kmer_cnt);

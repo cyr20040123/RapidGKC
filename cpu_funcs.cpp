@@ -530,16 +530,13 @@ void _extract_kmer_parallel (int n_t, int tid, u_char* skms, size_t tot_bytes, T
 void extract_kmers_cpu (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* kmers, unsigned int n_threads = 1) {
     // ---- Load SKMs ----
     u_char* skms;
-    skms = new u_char[skms_store.tot_size_bytes];//
     size_t i;
     if (skms_store.to_file) {
-        FILE* fp;
-        fp = fopen(skms_store.filename.c_str(), "rb");
-        assert(fp);
-        assert(fread(skms, 1, skms_store.tot_size_bytes, fp)==skms_store.tot_size_bytes);
-        fclose(fp);
+        skms_store.load_from_file();
+        skms = skms_store.skms_from_file;
     }
     else {
+        skms = new u_char[skms_store.tot_size_bytes];//
         #ifdef _SKMSTORE2_HPP
         memcpy(skms, skms_store.skms.c_str(), skms_store.tot_size_bytes);
         #else

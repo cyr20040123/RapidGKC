@@ -29,6 +29,8 @@ public:
     string filename;
     int flush_cnt = 0;
 
+    u_char* skms_from_file = nullptr;
+
     // no compression
     #ifdef SKMSTOREV1
     vector<size_t> skm_chunk_bytes;
@@ -54,7 +56,22 @@ public:
     // mutex dl_mtx;
     // vector<const u_char*> delete_list;
     moodycamel::ConcurrentQueue<u_char*> delete_list;
-    
+
+    // Load skms from file, can be called by P2 partition file loader and counter.
+    void load_from_file() {
+        data_mtx.lock();
+        if (skms_from_file == nullptr) {
+            FILE* fp;
+            fp = fopen(filename.c_str(), "rb");
+            assert(fp);
+            skms_from_file = new u_char[tot_size_bytes];
+            assert(fread(skms_from_file, 1, tot_size_bytes, fp) == tot_size_bytes);
+            fclose(fp);
+        }
+        data_mtx.unlock();
+        return;
+    }
+
     void _write_to_file(const u_char* data, size_t size) {
         #ifdef DEBUG
         assert(file_closed == false);

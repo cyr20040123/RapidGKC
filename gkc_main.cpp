@@ -87,6 +87,10 @@ std::atomic<int> cpu_p2_cnt{0};
 std::atomic<int> gpu_p2_cnt{0};
 
 size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, vector<T_kmc> *kmc_result) {
+    if (tid == 0) {
+        if (store_vec[0]->id % 7 == 0) cerr<<"\r"<<(int)(store_vec[0]->id*100/PAR.SKM_partitions)<<"%";
+        if (store_vec[0]->id > PAR.SKM_partitions - PAR.N_threads - 2) cerr<<"\r100%";
+    }
     size_t res = 0;
     // if (tid / gpars.max_threads_per_gpu >= gpars.n_devices) {
     // WallClockTimer wct;
@@ -104,8 +108,6 @@ size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, ve
         gpu_p2_cnt++;
         // cerr<<"*"+to_string(wct.stop());
     }
-    if (store_vec[0]->id % 11 == 0) cerr<<"\r"<<(int)(store_vec[0]->id*100/PAR.SKM_partitions)<<"%";
-    if (store_vec[0]->id > PAR.SKM_partitions - 10) cerr<<"\r100%";
     return res;
 }
 size_t phase2_forceCPU (int tid, SKMStoreNoncon* skm_store, vector<T_kmc> *kmc_result) {
@@ -261,8 +263,6 @@ void KmerCounting_TP(CUDAParams &gpars) {
     cerr<<endl;
     WallClockTimer wct2;
 
-    // ThreadPool<void> tp_fileloader(PAR.max_threads_per_gpu); // TODO async file loader
-    
     vector<T_kmc> kmc_result[PAR.SKM_partitions];
     int max_streams = min((PAR.SKM_partitions+max(PAR.n_devices, PAR.N_threads)) / max(PAR.n_devices, PAR.N_threads), PAR.n_streams_phase2);
     PAR.N_threads = PAR.threads_p2;
@@ -287,7 +287,9 @@ void KmerCounting_TP(CUDAParams &gpars) {
     debug_cudacp_timing = 0;
     #endif
     future<size_t> distinct_kmer_cnt[PAR.SKM_partitions];
-    ThreadPool<size_t> tp(PAR.N_threads,PAR.N_threads); //,{0,PAR.N_threads,0,PAR.max_threads_per_gpu});
+    ThreadPool<size_t> tp(PAR.N_threads, 2*PAR.N_threads); //,{0,PAR.N_threads,0,PAR.max_threads_per_gpu});
+    ThreadPool<void> tp_fileloader(2); //async file loader
+    SKMStoreNoncon *tmp_part;
     int j;
     for (i=0; i<PAR.SKM_partitions; i=j) {
         long long vram_avail = gpars.vram[0];
@@ -297,6 +299,11 @@ void KmerCounting_TP(CUDAParams &gpars) {
             if (vram_avail - skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) * 3 > 0.1 * gpars.vram[0]) {
                 store_vec.push_back(skm_part_vec[j]);
                 vram_avail -= skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) * 3;
+                if (PAR.to_file) {
+                    tp.hold_when_busy();
+                    tmp_part = skm_part_vec[j];
+                    tp_fileloader.commit_task_no_return([tmp_part](int tid){tmp_part->load_from_file();});
+                }
             } else break;
         }
         if (store_vec.size() == 0) { // if VRAM is not enough to handle even one partition, force using CPU
@@ -312,6 +319,7 @@ void KmerCounting_TP(CUDAParams &gpars) {
             });
         }
     }
+    tp_fileloader.finish();
     tp.finish();
 
     size_t distinct_kmer_cnt_tot = 0;

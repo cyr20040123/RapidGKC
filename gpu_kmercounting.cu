@@ -240,15 +240,9 @@ __global__ void GPU_Extract_Kmers_test (u_char* d_skms, size_t tot_bytes, T_kmer
 __host__ u_char* load_SKM_from_file (SKMStoreNoncon &skms_store) {
     u_char* d_skms;
     CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes));
-    FILE* fp;
-    fp = fopen(skms_store.filename.c_str(), "rb");
-    assert(fp);
-    u_char* tmp;
-    tmp = new u_char[skms_store.tot_size_bytes];
-    assert(fread(tmp, 1, skms_store.tot_size_bytes, fp)==skms_store.tot_size_bytes);
-    CUDA_CHECK(cudaMemcpy(d_skms, tmp, skms_store.tot_size_bytes, cudaMemcpyHostToDevice));
-    delete tmp;
-    fclose(fp);
+    skms_store.load_from_file();
+    CUDA_CHECK(cudaMemcpy(d_skms, skms_store.skms_from_file, skms_store.tot_size_bytes, cudaMemcpyHostToDevice));
+    delete skms_store.skms_from_file;
     return d_skms;
 }
 

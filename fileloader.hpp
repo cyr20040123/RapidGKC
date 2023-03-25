@@ -13,6 +13,8 @@
 #include "types.h"
 #include "thread_pool.hpp"
 
+#include "zlib.h"
+
 #ifdef USEMMAP
 #include <fcntl.h>      // open
 #include <sys/mman.h>   // mmap
@@ -408,6 +410,10 @@ private:
     //     std::cout<<"Loader finish 3 in "/*<<pop_cnt<<" "<<push_cnt<<" "<<line_cnt*/<<wct_readloader.stop()<<std::endl;
     // }
 public:
+    ReadLoader(const ReadLoader&) = delete;
+    void operator=(const ReadLoader&) = delete;
+    ReadLoader () = delete;
+    
     static const size_t MB = 1048576;
     static const size_t KB = 1024;
     ReadLoader (std::vector<std::string> filenames, T_read_len min_read_len = 0, size_t read_batch_size = 4096, int buffer_size_MB = 16, int max_buffer_size_MB = 1024, int n_threads_consumer = 16) {
@@ -517,5 +523,214 @@ int main() {
     return 0;
 }
 #endif
+
+class GZReadLoader {
+private:
+    ConcQueue<std::string> *_FNQ;           // filenames queue
+    ConcQueue<DataBuffer> _DBQ;             // data buffer queue
+    ConcQueue<LineBuffer> _LBQ;             // line buffer queue
+    ConcQueue<std::vector<ReadPtr>> *_RBQ;  // read batch queue
+    std::atomic<int> *_RBQ_FINISH_CNT;
+    bool _is_fasta;
+    
+    size_t _read_batch_size;
+    T_read_len _min_read_len;
+    
+    size_t _buffer_size;
+    size_t _max_queue_size;
+    
+    int _n_threads_consumer;
+
+    std::vector<std::thread> _started_threads;
+    
+    void _STEP1_load_from_file () { // NOT MMAP
+        char *buf = new char [_buffer_size];//
+        size_t cur_size;
+        char tmp;
+        std::string filename;
+        while (_FNQ->pop(filename)) {
+            gzFile fp = gzopen(filename.c_str(), "rb");
+            std::cerr<<"Open gz file ["<<filename<<"]: "<<fp<<std::endl;
+            
+            while (true) {
+                DataBuffer t;
+                t.size = gzread(fp, buf, _buffer_size);
+                if (t.size == 0) break;
+                t.buf = buf;
+                buf = new char[_buffer_size];
+                _DBQ.wait_push(t, _max_queue_size);
+            }
+            DataBuffer t;
+            t.size = 0;
+            t.buf = nullptr;
+            #ifdef WAITMEASURE
+            output_wait();
+            #endif
+            _DBQ.push(t); // push a null block when file ends
+            std::cerr<<"           "<<filename<<"  closed: "<<gzclose(fp)<<std::endl;
+        }
+        _DBQ.finish();
+        std::cout<<"Loader finish 1 "/*<<push_cnt*/<<std::endl;
+    }
+    void _STEP2_find_newline () { // NOT MMAP
+        DataBuffer t;
+        unsigned char flag_mask = _is_fasta ? 0b1 : 0b11;
+        unsigned char is_read_line = 0;
+        char *line_beg, *line_end;
+        while (_DBQ.pop(t)) {
+            LineBuffer x;
+            x.data = std::move(t);
+            if (x.data.size == 0) {
+                is_read_line = 0; // new file
+                continue;
+            }
+            x.readline_vec.reserve((t.size>>10)+8);
+            line_end = x.data.buf-1;
+            while (true) {
+                line_beg = line_end+1;
+                line_end = std::find(line_beg, x.data.buf+x.data.size, '\n');
+                if (is_read_line == 1) {
+                    if (line_end == x.data.buf+x.data.size) {
+                        x.readline_vec.push_back({line_beg, (int)(-(line_end-line_beg))});
+                        break;
+                    } else {
+                        x.readline_vec.push_back({line_beg, (int)(line_end-line_beg)});
+                    }
+                }
+                if (line_end == x.data.buf+x.data.size) break;
+                is_read_line = (is_read_line+1)&flag_mask;
+            }
+            _LBQ.wait_push(x, _max_queue_size);
+        }
+        _LBQ.finish();
+        std::cout<<"Loader finish 2 "<</*push_cnt<<" "<<line_cnt<<*/std::endl;
+    }
+    void _STEP3_extract_read () {
+        WallClockTimer wct_readloader;
+        
+        std::vector<ReadPtr> batch_reads;
+        batch_reads.reserve(_read_batch_size);
+
+        bool start_from_buffer = false;
+        std::string last_line_buffer;
+        ReadPtr read;
+
+        LineBuffer t;
+        while (_LBQ.pop(t)) {
+            for (std::vector<ReadLine>::iterator i = t.readline_vec.begin(); i != t.readline_vec.end();) {
+                if (start_from_buffer) {
+                    read.len = last_line_buffer.length() + i->len;
+                    read.read = new char[read.len];
+                    memcpy(read.read, last_line_buffer.c_str(), last_line_buffer.length());
+                    memcpy(read.read + last_line_buffer.length(), i->ptr, i->len);
+                    start_from_buffer = false;
+                } else if (i->len > 0) {
+                    read.len = i->len;
+                    read.read = new char[read.len];
+                    memcpy(read.read, i->ptr, i->len);
+                } else if (i->len < 0) {
+                    start_from_buffer = true;
+                    last_line_buffer = std::string(i->ptr, -(i->len));
+                    i++; continue;
+                }
+                if (read.len >= _min_read_len) batch_reads.push_back(read);
+                if (batch_reads.size() >= _read_batch_size) {
+                    _RBQ->wait_push(batch_reads, _n_threads_consumer + 1);
+                    batch_reads = std::vector<ReadPtr>();
+                    batch_reads.reserve(_read_batch_size);
+                }
+                i++;
+            }
+            delete t.data.buf; // malloc in _STEP1_load_from_file // NOT MMAP
+        }
+        if (start_from_buffer) {
+            read.len = last_line_buffer.length();
+            read.read = new char[read.len];
+            memcpy(read.read, last_line_buffer.c_str(), read.len);
+            batch_reads.push_back(read);
+        }
+        if (batch_reads.size()) _RBQ->push(batch_reads); // add last batch of reads
+        if (_RBQ_FINISH_CNT->fetch_sub(1) == 1) _RBQ->finish();
+        std::cout<<"Loader finish 3 in "/*<<pop_cnt<<" "<<push_cnt<<" "<<line_cnt*/<<wct_readloader.stop()<<std::endl;
+    }
+
+public:
+    GZReadLoader (const GZReadLoader&) = delete;
+    void operator=(const GZReadLoader&) = delete;
+    GZReadLoader () = delete;
+    
+    static const size_t MB = 1048576;
+    static const size_t KB = 1024;
+    GZReadLoader (ConcQueue<std::string> *filenames, bool is_fasta, ConcQueue<std::vector<ReadPtr>> *outputbatches, std::atomic<int> *rbq_finish_cnt, T_read_len min_read_len = 0, size_t read_batch_size = 4096, int buffer_size_MB = 16, int max_buffer_size_MB = 1024, int n_threads_consumer = 16) {
+        _FNQ = filenames;
+        _RBQ = outputbatches;
+        _RBQ_FINISH_CNT = rbq_finish_cnt;
+        _is_fasta = is_fasta;
+        if (_is_fasta) max_buffer_size_MB /= 2; // for fasta, the buffer size required should be 1/2 smaller.
+        _min_read_len = min_read_len;
+        _read_batch_size = read_batch_size;
+        _max_queue_size = max_buffer_size_MB / buffer_size_MB / 2;
+        _buffer_size = buffer_size_MB * MB;
+        _n_threads_consumer = n_threads_consumer;
+        std::cout<<(_is_fasta?"GZ Fasta format.":"GZ Fastq format.")<<std::endl;
+    }
+    void start_load_reads() {
+        _started_threads.push_back(std::thread(&GZReadLoader::_STEP1_load_from_file, this));
+        _started_threads.push_back(std::thread(&GZReadLoader::_STEP2_find_newline, this));
+        _started_threads.push_back(std::thread(&GZReadLoader::_STEP3_extract_read, this));
+    }
+    void join_threads() {
+        for (std::thread &t: _started_threads)
+            if (t.joinable()) t.join();
+    }
+    #ifdef WAITMEASURE
+    void output_wait () {
+        std::cout<<"1 Load    push wait: "<<_DBQ.debug_push_wait<<"\tpop wait: "<<_DBQ.debug_pop_wait<<std::endl;
+        std::cout<<"2 Newline push wait: "<<_LBQ.debug_push_wait<<"\tpop wait: "<<_LBQ.debug_pop_wait<<std::endl;
+        std::cout<<"3 Extract push wait: "<<_RBQ->debug_push_wait<<"\tpop wait: "<<_RBQ->debug_pop_wait<<std::endl;
+    }
+    #endif
+    static void work_while_loading_gz (T_kvalue K_kmer, std::function<void(std::vector<ReadPtr>&, int)> work_func, int worker_threads, 
+    std::vector<std::string> &filenames, int loader_threads,
+    T_read_cnt batch_size, size_t max_buffer_size_MB = 1024, size_t buffer_size_MB = 16) {
+        
+        T_read_len n_read_loaded = 0;
+
+        ThreadPool<void> tp(worker_threads, worker_threads); // +(worker_threads >= 8 ? worker_threads / 4 : 2));
+        std::vector<GZReadLoader*> rls;
+
+        ConcQueue<std::string> filenames_queue;
+        ConcQueue<std::vector<ReadPtr>> outputbatches_queue;
+        std::atomic<int> rbq_finish_cnt;
+        rbq_finish_cnt = loader_threads;
+        bool is_fasta = *(filenames[0].end()-4) == 'a' || *(filenames[0].end()-4) == 'A';
+        for (auto i: filenames) filenames_queue.push(i);
+        filenames_queue.finish();
+        for (int i=0; i<loader_threads; i++) {
+            rls.push_back(new GZReadLoader(&filenames_queue, is_fasta, &outputbatches_queue, &rbq_finish_cnt, K_kmer, batch_size, buffer_size_MB, max_buffer_size_MB, worker_threads));
+            (*rls.rbegin())->start_load_reads();
+        }
+
+        std::vector<ReadPtr> read_batch;
+        while (outputbatches_queue.pop(read_batch)) {
+            tp.hold_when_busy();
+            n_read_loaded += read_batch.size();
+            std::vector<ReadPtr> *my_read_batch = new std::vector<ReadPtr>();//
+            *my_read_batch = std::move(read_batch);
+            tp.commit_task([my_read_batch, &work_func] (int tid) {
+                work_func(*my_read_batch, tid);
+                for (ReadPtr &i: *my_read_batch) delete i.read;
+                delete my_read_batch;//
+            });
+        }
+        std::cerr<<"Total reads loaded: "<<n_read_loaded<<std::endl;
+        
+        for (int i=0; i<loader_threads; i++) {
+            rls[i]->join_threads();
+            delete rls[i];
+        }
+        tp.finish();
+    }
+};
 
 #endif

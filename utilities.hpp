@@ -174,6 +174,7 @@ public:
     
     T_read_cnt Batch_read_loading = 2000;
     size_t Buffer_size_MB = 256;
+    int threads_gz = 1;
 
     int grid_size = 8;
     int block_size = 256;
@@ -198,6 +199,7 @@ public:
             if (!strcmp(argvs[i], "-t")) N_threads = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-tgpu")) max_threads_per_gpu = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-t2")) threads_p2 = atoi(argvs[++i]);
+            else if (!strcmp(argvs[i], "-tgz")) threads_gz = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-tsort")) threads_cpu_sorter = atoi(argvs[++i]);
             // else if (!strcmp(argvs[i], "-rdt")) RD_threads_min = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-k")) K_kmer = atoi(argvs[++i]);

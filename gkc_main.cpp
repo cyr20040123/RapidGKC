@@ -7,6 +7,7 @@
 #include <bits/stdc++.h>
 // #include "read_loader_V2.hpp"
 #include "fileloader.hpp"
+// #include "fileloader_gz.hpp"
 #include "cpu_funcs.h"
 #include "gpu_skmgen.h"
 #include "gpu_kmercounting.h"
@@ -82,6 +83,9 @@ void phase1(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMStoreNoncon*> &
     }
 }
 
+std::atomic<int> cpu_p2_cnt{0};
+std::atomic<int> gpu_p2_cnt{0};
+
 size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, vector<T_kmc> *kmc_result) {
     size_t res = 0;
     // if (tid / gpars.max_threads_per_gpu >= gpars.n_devices) {
@@ -89,15 +93,19 @@ size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, ve
     if ((!PAR.GPU_only) && (PAR.CPU_only || tid >= gpars.n_devices * gpars.max_threads_per_gpu)) {
         for (auto i: store_vec)
             res += KmerCountingCPU(PAR.K_kmer, i, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[i->id], tid, PAR.threads_cpu_sorter);
-        cerr<<"-";
+        // cerr<<"-";
+        cpu_p2_cnt++;
         // cerr<<"-"+to_string(wct.stop());
     }
     else {
         int gpuid = tid / gpars.max_threads_per_gpu;
         res += kmc_counting_GPU_streams (PAR.K_kmer, store_vec, gpars, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result, gpuid, tid);
-        cerr<<"*";
+        // cerr<<"*";
+        gpu_p2_cnt++;
         // cerr<<"*"+to_string(wct.stop());
     }
+    if (store_vec[0]->id % 11 == 0) cerr<<"\r"<<(int)(store_vec[0]->id*100/PAR.SKM_partitions)<<"%";
+    if (store_vec[0]->id > PAR.SKM_partitions - 10) cerr<<"\r100%";
     return res;
 }
 size_t phase2_forceCPU (int tid, SKMStoreNoncon* skm_store, vector<T_kmc> *kmc_result) {
@@ -210,10 +218,16 @@ void KmerCounting_TP(CUDAParams &gpars) {
     //     [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){process_reads_count(reads, gpars, skm_part_vec, tid);},
     //     PAR.RD_threads_min, PAR.N_threads, PAR.read_files, PAR.Batch_read_loading, true, PAR.Buffer_fread_size_MB*ReadLoader::MB
     // );
-    ReadLoader::work_while_loading(PAR.K_kmer,
-        [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){phase1(reads, gpars, skm_part_vec, tid);},
-        PAR.N_threads, PAR.read_files, PAR.Batch_read_loading, PAR.Buffer_size_MB*PAR.N_threads);
-    
+    if (*(PAR.read_files[0].rbegin()) == 'z' || *(PAR.read_files[0].rbegin()) == 'Z') { // gz files
+        GZReadLoader::work_while_loading_gz(PAR.K_kmer,
+            [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){phase1(reads, gpars, skm_part_vec, tid);},
+            PAR.N_threads, PAR.read_files, PAR.threads_gz, PAR.Batch_read_loading, PAR.Buffer_size_MB*PAR.N_threads);
+    } else {
+        ReadLoader::work_while_loading(PAR.K_kmer,
+            [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){phase1(reads, gpars, skm_part_vec, tid);},
+            PAR.N_threads, PAR.read_files, PAR.Batch_read_loading, PAR.Buffer_size_MB*PAR.N_threads);
+    }
+
     size_t skm_tot_cnt = 0, skm_tot_bytes = 0, kmer_tot_cnt = 0;
     for(i=0; i<PAR.SKM_partitions; i++) {
         kmer_tot_cnt += skm_part_vec[i]->kmer_cnt;
@@ -244,8 +258,10 @@ void KmerCounting_TP(CUDAParams &gpars) {
     logger->log("-t2 = "+to_string(PAR.threads_p2)+
                 "\tGPU threads = "+to_string(PAR.max_threads_per_gpu)+ " * "+to_string(PAR.n_devices)+
                 "\tCPU threads = "+to_string(PAR.threads_p2 - PAR.max_threads_per_gpu * PAR.n_devices)+" * "+to_string(PAR.threads_cpu_sorter));
-    
+    cerr<<endl;
     WallClockTimer wct2;
+
+    // ThreadPool<void> tp_fileloader(PAR.max_threads_per_gpu); // TODO async file loader
     
     vector<T_kmc> kmc_result[PAR.SKM_partitions];
     int max_streams = min((PAR.SKM_partitions+max(PAR.n_devices, PAR.N_threads)) / max(PAR.n_devices, PAR.N_threads), PAR.n_streams_phase2);
@@ -315,6 +331,8 @@ void KmerCounting_TP(CUDAParams &gpars) {
     cerr<<"debug_cudacp_timing: "<< debug_cudacp_timing <<endl;
     #endif
     
+    logger->log("Phase 2 CPU:GPU = "+to_string(cpu_p2_cnt)+":"+to_string(gpu_p2_cnt), Logger::LV_NOTICE);
+
     logger->log("Total number of distinct kmers: "+to_string(distinct_kmer_cnt_tot), Logger::LV_NOTICE);
     
     double p2_time = wct2.stop();

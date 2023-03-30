@@ -42,33 +42,6 @@ size_t calVarStdev(vector<size_t> &vecNums) // calc avg max min var std cv (Coef
     return max_val;
 }
 
-/// @brief Will be called in file loading
-/// @param reads 
-/// @param gpars 
-/// @param skm_partition_stores 
-void process_reads_count(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMStoreNoncon*> &skm_partition_stores, int tid) {
-    // if ((!PAR.GPU_only) && (PAR.CPU_only || gpars.gpuworker_threads >= gpars.max_threads_per_gpu * gpars.n_devices)) {
-    if ((!PAR.GPU_only) && (PAR.CPU_only || tid / gpars.max_threads_per_gpu >= gpars.n_devices)) {
-        // call CPU splitter
-        GenSuperkmerCPU (reads, PAR.K_kmer, PAR.P_minimizer, false, PAR.SKM_partitions, skm_partition_stores, tid);
-        return;
-    }
-    // gpars.gpuworker_threads ++;//
-    sort(reads.begin(), reads.end(), sort_comp); // TODO: remove and compare the performance
-    PinnedCSR pinned_reads(reads);
-    stringstream ss;
-    ss << "-- BATCH  GPU: #reads: " << reads.size() << "\tmin_len = " << reads.begin()->len << "\tmax_len = " << reads.rbegin()->len <<"\tsize = " << pinned_reads.size_capacity << "\t--";
-    logger->log(ss.str());
-    assert(pinned_reads.get_n_reads() == reads.size());
-    // logger->log("Pinned: "+to_string(pinned_reads.get_n_reads())+" size = "+to_string(pinned_reads.size_capacity));
-    
-    // function<void(T_h_data)> process_func = [&skm_partition_stores](T_h_data hd) {
-    //     SKMStoreNoncon::save_batch_skms (skm_partition_stores, hd.skm_cnt, hd.kmer_cnt, hd.skmpart_offs, hd.skm_store_csr, nullptr, true);
-    // };
-    GenSuperkmerGPU (pinned_reads, PAR.K_kmer, PAR.P_minimizer, false, gpars, CountTask::SKMPartition, PAR.SKM_partitions, skm_partition_stores, tid);
-    // gpars.gpuworker_threads --;//
-}
-
 void phase1(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMStoreNoncon*> &skm_partition_stores, int tid) {
     if ((!PAR.GPU_only) && (PAR.CPU_only || tid >= gpars.n_devices * gpars.max_threads_per_gpu)) {
         // call CPU splitter
@@ -79,7 +52,7 @@ void phase1(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMStoreNoncon*> &
         stringstream ss;
         ss << "-- BATCH  GPU: #reads: " << reads.size() << "\tmin_len = " << reads.begin()->len << "\tmax_len = " << reads.rbegin()->len <<"\tsize = " << pinned_reads.size_capacity << "\t--";
         logger->log(ss.str());
-        GenSuperkmerGPU (pinned_reads, PAR.K_kmer, PAR.P_minimizer, false, gpars, CountTask::SKMPartition, PAR.SKM_partitions, skm_partition_stores, tid);
+        GenSuperkmerGPU (pinned_reads, PAR.K_kmer, PAR.P_minimizer, false, gpars, PAR.SKM_partitions, skm_partition_stores);
     }
 }
 

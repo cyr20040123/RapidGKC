@@ -103,31 +103,12 @@ extern Logger *logger;
 // =================================================
 // ================ CLASS PinnedCSR ================
 // =================================================
-    // PinnedCSR::PinnedCSR(vector<string> &reads) { // deprecated
-    //     this->n_reads = reads.size();
-    //     size_capacity = 0;
-    //     for (string &read: reads) {
-    //         size_capacity += read.length();
-    //     } // about cudaHostAlloc https://zhuanlan.zhihu.com/p/188246455
-    //     CUDA_CHECK(cudaHostAlloc((void**)(&reads_offs), (this->n_reads+1)*sizeof(T_CSR_cap), cudaHostAllocDefault));
-    //     CUDA_CHECK(cudaHostAlloc((void**)(&reads_CSR), size_capacity+1, cudaHostAllocDefault));
-    //     char *cur_ptr = reads_CSR;
-    //     T_CSR_cap *offs_ptr = reads_offs;
-    //     *offs_ptr = 0;
-    //     for (string &read: reads) {
-    //         memcpy(cur_ptr, read.c_str(), read.length());
-    //         cur_ptr += read.length();
-    //         offs_ptr++;
-    //         *offs_ptr = *(offs_ptr-1) + read.length();
-    //     }
-    // }
-    PinnedCSR::PinnedCSR(vector<ReadPtr> &reads, bool keep_original/*=true*/) { // for sorting CSR (order the pointers as the sorting result)
+    PinnedCSR::PinnedCSR(vector<ReadPtr> &reads) { // for sorting CSR (order the pointers as the sorting result)
         this->n_reads = reads.size();
         size_capacity = 0;
         for (const ReadPtr &read_ptr: reads) {
             size_capacity += read_ptr.len;
         } // about cudaHostAlloc https://zhuanlan.zhihu.com/p/188246455
-        // cerr<<"Pinned reads = "<<n_reads<<" \ttot_sizes = "<<size_capacity<<" bytes"<<endl;
         CUDA_CHECK(cudaHostAlloc((void**)(&reads_offs), (this->n_reads+1)*sizeof(T_CSR_cap), cudaHostAllocDefault));
         CUDA_CHECK(cudaHostAlloc((void**)(&reads_CSR), size_capacity+1, cudaHostAllocDefault));
         char *cur_ptr = reads_CSR;
@@ -211,8 +192,8 @@ __device__ bool sign_filter(T_minimizer mm, int p) {
     return flag & (((mm >> ((p-3)*2)) & 0b111011) != 0); /*AAA ACA*/;
 }
 /*
- * [INPUT]  data.reads in [(Read#0), (Read#1)...]
- * [OUTPUT] data.minimizers in [(Read#0)[mm1, mm?, mm?, ...], (Read#1)...]
+ * [INPUT]  d_reads in [(Read#0)['A','C','T','G',...], (Read#1)['A','C','T','G',...]]
+ * [OUTPUT] d_minimizers in [(Read#0)[mm1, mm?, mm?, ...], (Read#1)...]
  * all thread do one read at the same time with coalesced global memory access
  */
 __global__ void GPU_GenMinimizer(
@@ -277,7 +258,8 @@ __device__ __forceinline__ int _hash_partition (T_minimizer mm, int SKM_partitio
     return (~mm) % SKM_partitions;
 }
 __device__ inline T_skm_len _skm_bytes_required (T_read_len beg, T_read_len end, int k) {
-    return ((beg%3) + end+(k-1)-beg + 3) / 3; // +3 because skm_3x requires an extra empty byte
+    return ((beg%4) + end+(k-1)-beg + 3) / 4;
+    // return ((beg%3) + end+(k-1)-beg + 3) / 3; // +3 because skm_3x requires an extra empty byte
 }
 /* [INPUT]  data.minimizers in [[mm1, mm1, mm2, mm3, ...], ...]
  * [OUTPUT] data.superkmer_offs in [[0, 2, 3, ...], ...]
@@ -301,19 +283,12 @@ __global__ void GPU_GenSKMOffs(
     bool new_skm;
     T_read_len i;
 
-    // reset thread-local skm counter and kmer counter
-    // --- V1 ---
-    // unsigned short *p_skm_cnt = new unsigned short[SKM_partitions];//   // thread-local: skm cnt of each partition
-    // unsigned short *p_kmer_cnt = new unsigned short[SKM_partitions];//  // thread-local: kmer cnt of each partition // unsigned short may not be large enough, but unsigned int may overflow when SKM_part > 255
-    // for (i=0; i<SKM_partitions; i++) p_skm_cnt[i] = 0, p_kmer_cnt[i] = 0;
-    // --- V1 end ---
+    // reset shared arrays for skm and kmer counters
     extern __shared__ unsigned int shared_arr[];
-    // extern __shared__ unsigned int p_kmer_cnt[];
     unsigned int *p_skm_cnt = &shared_arr[0];
     unsigned int *p_kmer_cnt = &shared_arr[SKM_partitions];
     for (i=threadIdx.x; i<SKM_partitions; i+=blockDim.x) p_skm_cnt[i] = 0, p_kmer_cnt[i] = 0;
     __syncthreads();
-    // --- V2 end ---
     
     // each thread processes one read at a time
     for (T_read_cnt rid = tid; rid < d_reads_cnt; rid += n_t) {
@@ -329,54 +304,30 @@ __global__ void GPU_GenSKMOffs(
             skm[skm_count] = last_skm_pos; // skm #skm_count (begins from 1) ends at last_skm_pos
             // count skm part sizes
             if (new_skm) {
-                // p_i = minimizers[i-1] % SKM_partitions;
                 p_i = _hash_partition(minimizers[i-1], SKM_partitions);
                 atomicAdd(&d_skm_part_bytes[p_i], _skm_bytes_required(skm[skm_count-1], skm[skm_count], K_kmer));
-                // atomicAdd(&d_skm_cnt[p_i], 1);
-                
-                // --- V1 ---
-                // p_skm_cnt[p_i] ++;
-                // p_kmer_cnt[p_i] += skm[skm_count] - skm[skm_count-1];
-                // --- V1 end ---
                 atomicAdd(&p_skm_cnt[p_i], 1);
                 atomicAdd(&p_kmer_cnt[p_i], skm[skm_count] - skm[skm_count-1]);
-                // --- V2 end ---
             }
         }
         // process the last skm
         skm_count += 1;
         skm[skm_count] = len-K_kmer+1;
-        // p_i = minimizers[i-1] % SKM_partitions;
         p_i = _hash_partition(minimizers[i-1], SKM_partitions);
         atomicAdd(&d_skm_part_bytes[p_i], _skm_bytes_required(skm[skm_count-1], skm[skm_count], K_kmer));
-        // --- V1 ---
-        // p_skm_cnt[p_i] ++;
-        // p_kmer_cnt[p_i] += skm[skm_count] - skm[skm_count-1];
-        // --- V1 end ---
         atomicAdd(&p_skm_cnt[p_i], 1);
         atomicAdd(&p_kmer_cnt[p_i], skm[skm_count] - skm[skm_count-1]);
-        // --- V2 end ---
-
+        
         // set the ending 0 and store skm_count at skm[len-1]
         skm[skm_count+1] = 0;
         skm[len-1] = skm_count;
     }
 
-    // add thread-local counter to the global memory // TODO: move this for-loop into the above loop and flush every loop, so that unsigned char should be enough
-    // --- V1 ---
-    // for (int i=0; i<SKM_partitions; i++) {
-    //     atomicAdd(&d_skm_cnt[i], p_skm_cnt[i]);
-    //     atomicAdd(&d_kmer_cnt[i], p_kmer_cnt[i]);
-    // }
-    // delete p_skm_cnt;//
-    // delete p_kmer_cnt;//
-    // --- V1 end ---
     __syncthreads();
     for (i=threadIdx.x; i<SKM_partitions; i+=blockDim.x) {
         atomicAdd(&d_skm_cnt[i], p_skm_cnt[i]);
         atomicAdd(&d_kmer_cnt[i], p_kmer_cnt[i]);
     }
-    // --- V2 end ---
     return;
 }
 
@@ -384,7 +335,8 @@ __global__ void GPU_ReadCompression(_in_ _out_ unsigned char *d_reads, _in_ T_CS
     
     unsigned char* cur_read;
     T_read_len len;
-    uchar3 c4; // 3 = BYTE_BASES
+    // uchar3 c4; // 3 = BYTE_BASES
+    // uchar4 c4;
     u_char tmp;
     T_read_len i, j, last_byte_bases;
     
@@ -392,32 +344,28 @@ __global__ void GPU_ReadCompression(_in_ _out_ unsigned char *d_reads, _in_ T_CS
     for (T_read_cnt i_read = blockIdx.x; i_read < d_reads_cnt; i_read += gridDim.x) {
         len = d_read_len[i_read];
         cur_read = (&(d_reads[d_read_offs[i_read]]));
-        // one thread process 3 bases at a time (2-bit cnt + 6-bit bases in byte):
+        // one thread process 4 bases at a time:
         for (i = threadIdx.x * BYTE_BASES; i - threadIdx.x*BYTE_BASES <= len; i += blockDim.x * BYTE_BASES) { // Coalesced Access
             // why "- threadIdx.x" in ending condition? - To ensure each thread will run the same time for __syncthreads().
             if (i + BYTE_BASES <= len) {
                 // TO-DO: [experiment] compare with below (check if uchar3 is faster than three single vars)
                 // tmp = (d_basemap[cur_read[i]] << 4) | (d_basemap[cur_read[i+1]] << 2) | (d_basemap[cur_read[i+2]]) | 0b11000000;
-                c4 = *(reinterpret_cast<uchar3*>(&cur_read[i])); // load 3 bases at a time
-                c4.x = d_basemap[c4.x]; c4.y = d_basemap[c4.y]; c4.z = d_basemap[c4.z]; // convert 3 bases to 2-bit
-                tmp = (c4.x << 4) | (c4.y << 2) | (c4.z) | 0b11000000; // generate byte
+                // c4 = *(reinterpret_cast<uchar4*>(&cur_read[i])); // load 3 bases at a time
+                // c4.x = d_basemap[c4.x]; c4.y = d_basemap[c4.y]; c4.z = d_basemap[c4.z]; c4.w = d_basemap[c4.w]; // convert 4 bases to 2-bit
+                // tmp = (c4.x << 6) | (c4.y << 4) | (c4.z << 2) | (c4.w); // generate byte
+                tmp = (d_basemap[cur_read[i]] << 6) | (d_basemap[cur_read[i+1]] << 4) | (d_basemap[cur_read[i+2]] << 2) | (d_basemap[cur_read[i+3]]);
             }
             __syncthreads(); // avoid overwriting before raw read base is loaded
             if (i + BYTE_BASES <= len) {
-                // printf("%d-%d | %d/%d | store=%d\n", i_read, threadIdx.x, i, len, i/BYTE_BASES);
                 cur_read[i/BYTE_BASES] = tmp;
             }
         }
-        // if (threadIdx.x == 0) {
-        //     printf("block %d rid %d: len=%d\n", blockIdx.x, i_read, len);
-        // }
         i -= blockDim.x*BYTE_BASES;
-        if ((i <= len) & (i > len-BYTE_BASES)) { // process the last byte, only 1 thread should be available here
-            // printf("%d-%d | %d/%d | store=%d\n", i_read, threadIdx.x, i, len, i/BYTE_BASES);
+        if ((i < len) & (i > len-BYTE_BASES)) { // process the last byte, only 1 thread should be available here
             last_byte_bases = len-i;
-            tmp = last_byte_bases<<6;
+            tmp = 0;
             for (j=0; j<last_byte_bases; j++) {
-                tmp |= d_basemap[cur_read[i+j]] << (4-j*2);
+                tmp |= d_basemap[cur_read[i+j]] << (6-j*2);
             }
             cur_read[i/BYTE_BASES] = tmp;
         }
@@ -431,6 +379,7 @@ __global__ void GPU_ExtractSKM (
     _in_ T_minimizer *d_minimizers,
     _in_ T_read_len *d_skm_offs_inread,
     _in_ T_skm_partsize *d_store_pos, /*_in_ T_skm_partsize *d_skm_cnt, */_out_ u_char *d_skm_store_csr, _in_ T_CSR_cap *d_skmpart_offs, 
+    _in_ T_skm_partsize *d_len_store_pos, _out_ T_skm_len *d_skm_lengths, _in_ T_CSR_cap *d_skmlen_offs, 
     const T_kvalue K_kmer, const T_kvalue P_minimizer, const int SKM_partitions
 ) {
     T_read_len *cur_read_skm_offs;      // skm offs pointer of current read
@@ -440,6 +389,7 @@ __global__ void GPU_ExtractSKM (
     int partition;                      // the partition of the current skm
     T_skm_len skm_size_bytes;           // bytes of current skm
     T_skm_partsize cur_skm_store_pos;   // where to store the current skm (partition's own offs)
+    T_skm_partsize cur_skmlen_store_pos;// where to store the length of cur skm
 
     // each block process one read
     for (T_read_cnt rid = blockIdx.x; rid < d_reads_cnt; rid += gridDim.x) {
@@ -447,24 +397,21 @@ __global__ void GPU_ExtractSKM (
         cur_read_skm_offs = &(d_skm_offs_inread[d_read_offs[rid]]);
         cur_read = &(d_reads[d_read_offs[rid]]);
         // each thread process one skm
-        // if (threadIdx.x == 0) printf("[%d]|%d,%d", rid, cur_read_len, cur_read_skm_offs[cur_read_len-1]);
-        for (T_read_len i_skm = threadIdx.x+1; i_skm <= cur_read_skm_offs[cur_read_len-1]; i_skm += blockDim.x) {
+        for (T_read_len i_skm = threadIdx.x+1; i_skm <= cur_read_skm_offs[cur_read_len-1]; i_skm += blockDim.x) { // cur_read_skm_offs[cur_read_len-1]: number of skms of this read
             // printf("%d|%d\n",rid,i_skm);
             // for each skm of the current read, cur_read_skm_offs[0] == 0, loop begins from 1
             // -- store skm --
-            // partition = d_minimizers[d_read_offs[rid] + cur_read_skm_offs[i_skm-1]] % SKM_partitions;
             partition = _hash_partition (d_minimizers[d_read_offs[rid] + cur_read_skm_offs[i_skm-1]], SKM_partitions);
             skm_size_bytes = _skm_bytes_required(cur_read_skm_offs[i_skm-1], cur_read_skm_offs[i_skm], K_kmer); // beg, end, k
             cur_skm_store_pos = atomicAdd(&d_store_pos[partition], skm_size_bytes); // assign space to store current skm
             memcpy(&d_skm_store_csr[d_skmpart_offs[partition] + cur_skm_store_pos], &cur_read[cur_read_skm_offs[i_skm-1]/BYTE_BASES], skm_size_bytes);
-            // process the first byte
-            d_skm_store_csr[d_skmpart_offs[partition] + cur_skm_store_pos] &= 0b00111111;
-            d_skm_store_csr[d_skmpart_offs[partition] + cur_skm_store_pos] |= (BYTE_BASES-cur_read_skm_offs[i_skm-1] % BYTE_BASES) << (2*BYTE_BASES); // effective bases in the first byte
-            // process the last byte
-            d_skm_store_csr[d_skmpart_offs[partition] + cur_skm_store_pos + skm_size_bytes - 1] &= 0b00111111;
-            d_skm_store_csr[d_skmpart_offs[partition] + cur_skm_store_pos + skm_size_bytes - 1] |= ((cur_read_skm_offs[i_skm]-1+K_kmer) % BYTE_BASES) << (2*BYTE_BASES);
+
+            // ---- store the skm length ----
+            cur_skmlen_store_pos = atomicAdd(&d_len_store_pos[partition], 1);
+            d_skm_lengths[d_skmlen_offs[partition] + cur_skmlen_store_pos]
+             = (T_skm_len)((cur_read_skm_offs[i_skm] - cur_read_skm_offs[i_skm-1] + K_kmer - 1) | ((cur_read_skm_offs[i_skm-1] % BYTE_BASES) << 14));
+            // printf("%u\n", d_skm_lengths[d_skmlen_offs[partition] + cur_skmlen_store_pos] & 0b0011111111111111);
         }
-        // __syncthreads(); // sync threads in the same block for read_skm_not_empty
     }
     return;
 }
@@ -498,22 +445,14 @@ __host__ size_t GPUReset(int did) {
 
 // provide pinned_reads from the shortest to the longest read
 __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
-    const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars, CountTask task,
-    const int SKM_partitions, vector<SKMStoreNoncon*> skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
-    int tid
-    /*atomic<size_t> skm_part_sizes[]*/) {
+    const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars,
+    const int SKM_partitions, vector<SKMStoreNoncon*> skm_partition_stores
+    ) {
     
     int time_all=0, time_filter=0;
 
     int gpuid = (gpars.device_id++) % gpars.n_devices;
     CUDA_CHECK(cudaSetDevice(gpuid));
-    // V2:
-    // if (gpars.gpuid_thread[tid] == -1) {
-    //     CUDA_CHECK(cudaSetDevice(tid%gpars.n_devices));
-    //     gpars.gpuid_thread[tid] = tid%gpars.n_devices;
-    // }
-    // int gpuid = gpars.gpuid_thread[tid];
-    // CUDA_CHECK(cudaDeviceSynchronize());
     
     cudaStream_t streams[gpars.n_streams];
     T_d_data gpu_data[gpars.n_streams];
@@ -597,7 +536,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             time_filter += wct2.stop(true);
             #endif
-            
+
             GPU_GenSKMOffs<<<gpars.BpG1, gpars.TpB1, 2*SKM_partitions*sizeof(unsigned int), streams[i]>>>(
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_len, gpu_data[i].d_read_offs, 
                 gpu_data[i].d_minimizers,
@@ -628,6 +567,9 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             // ---- cudaMalloc skm store positions ----
             CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_store_pos), sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
             CUDA_CHECK(cudaMemsetAsync(gpu_data[i].d_store_pos, 0, sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
+
+            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_len_store_pos), sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
+            CUDA_CHECK(cudaMemsetAsync(gpu_data[i].d_len_store_pos, 0, sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
         }
         started_streams = i;
 
@@ -640,32 +582,44 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             host_data[i].tot_skm_bytes = 0;
             host_data[i].skmpart_offs = new T_CSR_cap[SKM_partitions+1];//
             host_data[i].skmpart_offs[0] = 0;
+            host_data[i].skmlen_offs = new T_CSR_cap[SKM_partitions+1];//
+            host_data[i].skmlen_offs[0] = 0;
+            host_data[i].tot_skm_cnt = 0;
             for (int j = 0; j < SKM_partitions; j++) {
                 // assert(host_data[i].skm_part_bytes[j] < 0xffffffffu);
                 host_data[i].skmpart_offs[j+1] = host_data[i].skmpart_offs[j] + host_data[i].skm_part_bytes[j];
                 host_data[i].tot_skm_bytes += host_data[i].skm_part_bytes[j];
+                host_data[i].skmlen_offs[j+1] = host_data[i].skmlen_offs[j] + host_data[i].skm_cnt[j];
+                host_data[i].tot_skm_cnt += host_data[i].skm_cnt[j];
             }
             // ---- cudaMalloc skm store ----
             CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skm_store_csr), host_data[i].tot_skm_bytes, streams[i]));
+            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skm_lengths), host_data[i].tot_skm_cnt * sizeof(T_skm_len), streams[i]));
+            
             // ---- memcpy skm part sizes and offsets to gpu ----
             CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skmpart_offs), sizeof(T_CSR_cap) * (SKM_partitions+1), streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_skmpart_offs, host_data[i].skmpart_offs, sizeof(T_CSR_cap) * (SKM_partitions+1), cudaMemcpyHostToDevice, streams[i]));
+            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skmlen_offs), sizeof(T_CSR_cap) * (SKM_partitions+1), streams[i]));
+            CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_skmlen_offs, host_data[i].skmlen_offs, sizeof(T_CSR_cap) * (SKM_partitions+1), cudaMemcpyHostToDevice, streams[i]));
 
             // ---- GPU extract skms ----
             GPU_ExtractSKM<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>> (
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_len, gpu_data[i].d_read_offs, gpu_data[i].d_reads,
                 gpu_data[i].d_minimizers, gpu_data[i].d_superkmer_offs, 
                 gpu_data[i].d_store_pos, /*gpu_data[i].d_skm_cnt, */gpu_data[i].d_skm_store_csr, gpu_data[i].d_skmpart_offs,
+                gpu_data[i].d_len_store_pos, gpu_data[i].d_skm_lengths, gpu_data[i].d_skmlen_offs,
                 K_kmer, P_minimizer, SKM_partitions
             );
             // -- Malloc on host for SKM storage --
-            host_data[i].skm_store_csr = new u_char[host_data[i].tot_skm_bytes];//
+            host_data[i].skm_store_csr = new u_char[host_data[i].tot_skm_bytes]; // will not be deleted until program ends
+            host_data[i].skm_lengths = new T_skm_len[host_data[i].tot_skm_cnt]; // will not be deleted until program ends
         }
 
         // ==== Copy SKMs Back to CPU ====
         for (i = 0; i < started_streams; i++) {
             // -- Non-compressed SKM collection (D2H) -- 
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].skm_store_csr, gpu_data[i].d_skm_store_csr, host_data[i].tot_skm_bytes, cudaMemcpyDeviceToHost, streams[i]));
+            CUDA_CHECK(cudaMemcpyAsync(host_data[i].skm_lengths, gpu_data[i].d_skm_lengths, host_data[i].tot_skm_cnt * sizeof(T_skm_len), cudaMemcpyDeviceToHost, streams[i]));
             
             // TO-DO: add if on task to indicate whether to new and D2H
             if (HPC) {
@@ -691,12 +645,15 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_store_pos, streams[i]));
             CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skm_store_csr, streams[i]));
             CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skmpart_offs, streams[i]));
+            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_len_store_pos, streams[i]));
+            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skm_lengths, streams[i]));
+            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skmlen_offs, streams[i]));
         }
         // ==== CPU Store SKMs ====
         for (i = 0; i < started_streams; i++) {
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             // process_func(host_data[i]);
-            SKMStoreNoncon::save_batch_skms (skm_partition_stores, host_data[i].skm_cnt, host_data[i].kmer_cnt, host_data[i].skmpart_offs, host_data[i].skm_store_csr);
+            SKMStoreNoncon::save_batch_skms (skm_partition_stores, host_data[i].skm_lengths, host_data[i].skm_cnt, host_data[i].kmer_cnt, host_data[i].skmpart_offs, host_data[i].skm_store_csr);
             
             // -- clean host variables --
             if (HPC) {
@@ -708,6 +665,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             delete [] host_data[i].skm_cnt;//2
             delete [] host_data[i].kmer_cnt;//3
             delete [] host_data[i].skmpart_offs;//
+            delete [] host_data[i].skmlen_offs;//
             // if (write to file) delete [] host_data[i].skm_store_csr;// will not be deleted until program ends
         }
     }

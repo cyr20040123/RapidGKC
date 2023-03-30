@@ -37,7 +37,7 @@ typedef unsigned __int128 T_kmer;
 const T_kmer TKMAX = (T_kmer)(-1);
 
 // typedef unsigned char byte;
-const int BYTE_BASES = 3;
+const int BYTE_BASES = 4;
 // typedef unsigned int QByte;
 
 // host data
@@ -57,12 +57,15 @@ struct T_h_data {
     _out_ T_skm_partsize *skm_cnt;
     _out_ T_skm_partsize *kmer_cnt;
     _in_ _out_ T_CSR_cap *skmpart_offs;
+    _in_ _out_ T_CSR_cap *skmlen_offs;
     size_t tot_skm_bytes;
+    size_t tot_skm_cnt;
     _out_ u_char *skm_store_csr;
+    _out_ T_skm_len *skm_lengths;
 
-    // Compressed SKMs
-    u_char **skm_data;
-    size_t *skmpart_compressed_bytes;
+    // // Compressed SKMs
+    // u_char **skm_data;
+    // size_t *skmpart_compressed_bytes;
 };
 
 // device data
@@ -88,9 +91,14 @@ struct T_d_data {
     T_skm_partsize *d_skm_part_bytes;  // len == SKM_part          ull     size of each skm partitions for the current stream batch (2-bit compression size, calc in GPU_GenSKM)
     T_skm_partsize *d_skm_cnt;          // len == SKM_part          ull     skm count of each part, for storing count (calc in GPU_GenSKM)
     T_skm_partsize *d_kmer_cnt;         // len == SKM_part          ull     kmer count of each partition, for kmer extraction memory allocation
+    
     T_skm_partsize *d_store_pos;        // len == SKM_part          size_t  offs to store SKM in a partition of d_skm_store_csr
     u_char *d_skm_store_csr;             // len == * part_size[p]    
     T_CSR_cap *d_skmpart_offs;          // len == * skm_cnt[p]      
+
+    T_skm_partsize *d_len_store_pos;
+    T_skm_len *d_skm_lengths;
+    T_CSR_cap *d_skmlen_offs;
 };
 
 

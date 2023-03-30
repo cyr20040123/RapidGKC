@@ -32,8 +32,7 @@ public:
     T_CSR_cap* reads_offs;
     T_read_cnt n_reads;
     T_CSR_cap size_capacity; // bytes = char unit
-    // PinnedCSR(vector<string> &reads);
-    PinnedCSR(std::vector<ReadPtr> &reads, bool keep_original=true);
+    PinnedCSR(std::vector<ReadPtr> &reads);
     ~PinnedCSR();
     char* get_reads_CSR() {return reads_CSR;}
     T_CSR_cap* get_reads_offs() {return reads_offs;}
@@ -43,18 +42,11 @@ public:
 
 
 // host/global functions
-enum CountTask {SKMPartition, SKMPartWithPos, StoreMinimizerPos}; // 正常kmc, wtdbg2的kmc, minimap2的minimizer查找
-
-// void CalcSKMPartSize_instream (T_read_cnt reads_cnt, T_read_len *superkmer_offs, 
-//     T_CSR_cap *reads_offs, T_minimizer *minimizers, 
-//     int n_partitions, int k, atomic<size_t> part_sizes[]);
 
 size_t GPUReset (int did);
 
 void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
-    const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars, CountTask task,
-    const int SKM_partitions, std::vector<SKMStoreNoncon*> skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
-    int tid
-    /*atomic<size_t> skm_part_sizes[]*/);
-
+    const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars,
+    const int SKM_partitions, std::vector<SKMStoreNoncon*> skm_partition_stores
+    );
 #endif

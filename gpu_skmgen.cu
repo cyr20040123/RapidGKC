@@ -258,7 +258,7 @@ __device__ __forceinline__ int _hash_partition (T_minimizer mm, int SKM_partitio
     return (~mm) % SKM_partitions;
 }
 __device__ inline T_skm_len _skm_bytes_required (T_read_len beg, T_read_len end, int k) {
-    return ((beg%4) + end+(k-1)-beg + 3) / 4;
+    return sizeof(T_skm_len) + ((beg%4) + end+(k-1)-beg + 3) / 4;
     // return ((beg%3) + end+(k-1)-beg + 3) / 3; // +3 because skm_3x requires an extra empty byte
 }
 /* [INPUT]  data.minimizers in [[mm1, mm1, mm2, mm3, ...], ...]
@@ -379,7 +379,7 @@ __global__ void GPU_ExtractSKM (
     _in_ T_minimizer *d_minimizers,
     _in_ T_read_len *d_skm_offs_inread,
     _in_ T_skm_partsize *d_store_pos, /*_in_ T_skm_partsize *d_skm_cnt, */_out_ u_char *d_skm_store_csr, _in_ T_CSR_cap *d_skmpart_offs, 
-    _in_ T_skm_partsize *d_len_store_pos, _out_ T_skm_len *d_skm_lengths, _in_ T_CSR_cap *d_skmlen_offs, 
+    // _in_ T_skm_partsize *d_len_store_pos, _out_ T_skm_len *d_skm_lengths, _in_ T_CSR_cap *d_skmlen_offs, 
     const T_kvalue K_kmer, const T_kvalue P_minimizer, const int SKM_partitions
 ) {
     T_read_len *cur_read_skm_offs;      // skm offs pointer of current read
@@ -389,7 +389,6 @@ __global__ void GPU_ExtractSKM (
     int partition;                      // the partition of the current skm
     T_skm_len skm_size_bytes;           // bytes of current skm
     T_skm_partsize cur_skm_store_pos;   // where to store the current skm (partition's own offs)
-    T_skm_partsize cur_skmlen_store_pos;// where to store the length of cur skm
 
     // each block process one read
     for (T_read_cnt rid = blockIdx.x; rid < d_reads_cnt; rid += gridDim.x) {
@@ -404,12 +403,11 @@ __global__ void GPU_ExtractSKM (
             partition = _hash_partition (d_minimizers[d_read_offs[rid] + cur_read_skm_offs[i_skm-1]], SKM_partitions);
             skm_size_bytes = _skm_bytes_required(cur_read_skm_offs[i_skm-1], cur_read_skm_offs[i_skm], K_kmer); // beg, end, k
             cur_skm_store_pos = atomicAdd(&d_store_pos[partition], skm_size_bytes); // assign space to store current skm
-            memcpy(&d_skm_store_csr[d_skmpart_offs[partition] + cur_skm_store_pos], &cur_read[cur_read_skm_offs[i_skm-1]/BYTE_BASES], skm_size_bytes);
-
-            // ---- store the skm length ----
-            cur_skmlen_store_pos = atomicAdd(&d_len_store_pos[partition], 1);
-            d_skm_lengths[d_skmlen_offs[partition] + cur_skmlen_store_pos]
+            d_skm_store_csr[d_skmpart_offs[partition] + cur_skm_store_pos]
              = (T_skm_len)((cur_read_skm_offs[i_skm] - cur_read_skm_offs[i_skm-1] + K_kmer - 1) | ((cur_read_skm_offs[i_skm-1] % BYTE_BASES) << 14));
+            memcpy(&d_skm_store_csr[d_skmpart_offs[partition] + cur_skm_store_pos + sizeof(T_skm_len)], &cur_read[cur_read_skm_offs[i_skm-1]/BYTE_BASES], skm_size_bytes);
+            if (cur_read_skm_offs[i_skm] - cur_read_skm_offs[i_skm-1] + K_kmer - 1 > 256) printf(" = %d\n", cur_read_skm_offs[i_skm] - cur_read_skm_offs[i_skm-1] + K_kmer - 1);
+            assert((cur_read_skm_offs[i_skm] - cur_read_skm_offs[i_skm-1] + K_kmer - 1) < 8192);
             // printf("%u\n", d_skm_lengths[d_skmlen_offs[partition] + cur_skmlen_store_pos] & 0b0011111111111111);
         }
     }
@@ -567,9 +565,6 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             // ---- cudaMalloc skm store positions ----
             CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_store_pos), sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
             CUDA_CHECK(cudaMemsetAsync(gpu_data[i].d_store_pos, 0, sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
-
-            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_len_store_pos), sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
-            CUDA_CHECK(cudaMemsetAsync(gpu_data[i].d_len_store_pos, 0, sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
         }
         started_streams = i;
 
@@ -582,44 +577,35 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             host_data[i].tot_skm_bytes = 0;
             host_data[i].skmpart_offs = new T_CSR_cap[SKM_partitions+1];//
             host_data[i].skmpart_offs[0] = 0;
-            host_data[i].skmlen_offs = new T_CSR_cap[SKM_partitions+1];//
-            host_data[i].skmlen_offs[0] = 0;
             host_data[i].tot_skm_cnt = 0;
             for (int j = 0; j < SKM_partitions; j++) {
                 // assert(host_data[i].skm_part_bytes[j] < 0xffffffffu);
                 host_data[i].skmpart_offs[j+1] = host_data[i].skmpart_offs[j] + host_data[i].skm_part_bytes[j];
                 host_data[i].tot_skm_bytes += host_data[i].skm_part_bytes[j];
-                host_data[i].skmlen_offs[j+1] = host_data[i].skmlen_offs[j] + host_data[i].skm_cnt[j];
                 host_data[i].tot_skm_cnt += host_data[i].skm_cnt[j];
             }
             // ---- cudaMalloc skm store ----
             CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skm_store_csr), host_data[i].tot_skm_bytes, streams[i]));
-            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skm_lengths), host_data[i].tot_skm_cnt * sizeof(T_skm_len), streams[i]));
             
             // ---- memcpy skm part sizes and offsets to gpu ----
             CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skmpart_offs), sizeof(T_CSR_cap) * (SKM_partitions+1), streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_skmpart_offs, host_data[i].skmpart_offs, sizeof(T_CSR_cap) * (SKM_partitions+1), cudaMemcpyHostToDevice, streams[i]));
-            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skmlen_offs), sizeof(T_CSR_cap) * (SKM_partitions+1), streams[i]));
-            CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_skmlen_offs, host_data[i].skmlen_offs, sizeof(T_CSR_cap) * (SKM_partitions+1), cudaMemcpyHostToDevice, streams[i]));
 
             // ---- GPU extract skms ----
             GPU_ExtractSKM<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>> (
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_len, gpu_data[i].d_read_offs, gpu_data[i].d_reads,
                 gpu_data[i].d_minimizers, gpu_data[i].d_superkmer_offs, 
                 gpu_data[i].d_store_pos, /*gpu_data[i].d_skm_cnt, */gpu_data[i].d_skm_store_csr, gpu_data[i].d_skmpart_offs,
-                gpu_data[i].d_len_store_pos, gpu_data[i].d_skm_lengths, gpu_data[i].d_skmlen_offs,
                 K_kmer, P_minimizer, SKM_partitions
             );
             // -- Malloc on host for SKM storage --
             host_data[i].skm_store_csr = new u_char[host_data[i].tot_skm_bytes]; // will not be deleted until program ends
-            host_data[i].skm_lengths = new T_skm_len[host_data[i].tot_skm_cnt]; // will not be deleted until program ends
         }
 
         // ==== Copy SKMs Back to CPU ====
         for (i = 0; i < started_streams; i++) {
             // -- Non-compressed SKM collection (D2H) -- 
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].skm_store_csr, gpu_data[i].d_skm_store_csr, host_data[i].tot_skm_bytes, cudaMemcpyDeviceToHost, streams[i]));
-            CUDA_CHECK(cudaMemcpyAsync(host_data[i].skm_lengths, gpu_data[i].d_skm_lengths, host_data[i].tot_skm_cnt * sizeof(T_skm_len), cudaMemcpyDeviceToHost, streams[i]));
             
             // TO-DO: add if on task to indicate whether to new and D2H
             if (HPC) {
@@ -645,15 +631,12 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_store_pos, streams[i]));
             CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skm_store_csr, streams[i]));
             CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skmpart_offs, streams[i]));
-            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_len_store_pos, streams[i]));
-            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skm_lengths, streams[i]));
-            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skmlen_offs, streams[i]));
         }
         // ==== CPU Store SKMs ====
         for (i = 0; i < started_streams; i++) {
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             // process_func(host_data[i]);
-            SKMStoreNoncon::save_batch_skms (skm_partition_stores, host_data[i].skm_lengths, host_data[i].skm_cnt, host_data[i].kmer_cnt, host_data[i].skmpart_offs, host_data[i].skm_store_csr);
+            SKMStoreNoncon::save_batch_skms (skm_partition_stores, host_data[i].skm_cnt, host_data[i].kmer_cnt, host_data[i].skmpart_offs, host_data[i].skm_store_csr);
             
             // -- clean host variables --
             if (HPC) {
@@ -665,8 +648,6 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             delete [] host_data[i].skm_cnt;//2
             delete [] host_data[i].kmer_cnt;//3
             delete [] host_data[i].skmpart_offs;//
-            delete [] host_data[i].skmlen_offs;//
-            // if (write to file) delete [] host_data[i].skm_store_csr;// will not be deleted until program ends
         }
     }
     logger->log(logs);

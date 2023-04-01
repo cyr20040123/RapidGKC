@@ -98,43 +98,71 @@ __device__ void process_skm(T_skm_len skm_len, unsigned char start_offs, u_char 
     d_kmers[store_pos] = kmer;
     return;
 }
-__global__ void GPU_Extract_Kmers (u_char* d_skms, 
-    T_skm_len *d_skm_lengths, unsigned int *d_skm_byte_offs, unsigned char *d_start_offs, unsigned int skm_cnt,
+
+__device__ __host__ void _parse_length_data (_in_ T_skm_len len_data, _out_ unsigned char &start_in_byte, _out_ T_skm_len &skm_len, _out_ T_skm_len &bytes) {
+    skm_len = len_data & 0b0011111111111111;
+    start_in_byte = len_data >> 14;
+    bytes = (start_in_byte + skm_len + 3) / BYTE_BASES;
+}
+
+__global__ void GPU_Extract_Kmers (u_char* d_skms, size_t skm_data_bytes, 
+    // T_skm_len *d_skm_lengths, unsigned int *d_skm_byte_offs, unsigned char *d_start_offs, unsigned int skm_cnt,
     T_kmer *d_kmers, unsigned long long *d_kmer_store_pos, T_kvalue k)
 {
     int n_t = blockDim.x * gridDim.x;
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
-    size_t skms_per_thread = (skm_cnt + n_t - 1) / n_t; // min: 1
-    unsigned int beg_skm = tid * skms_per_thread;
-    unsigned int end_skm = (tid+1) * skms_per_thread;
-    if (end_skm > skm_cnt) end_skm = skm_cnt;
-    unsigned int i;
-    for (i = beg_skm; i < end_skm; i++) {
-        process_skm(d_skm_lengths[i], d_start_offs[i], &d_skms[d_skm_byte_offs[i]], d_kmers, d_kmer_store_pos, k);
+
+    T_skm_len len_data, skm_len, bytes;
+    unsigned char start_in_byte;
+    u_char* cur_ptr;
+    for (size_t i = tid * SKM_ALIGN; i < skm_data_bytes-sizeof(T_skm_len); i += n_t * SKM_ALIGN) {
+        cur_ptr = d_skms+i;
+        len_data = *(T_skm_len*)cur_ptr;
+        while (len_data != 0) {
+            cur_ptr += sizeof(T_skm_len);
+            _parse_length_data(len_data, start_in_byte, skm_len, bytes);
+            assert(skm_len < 256);
+            process_skm(skm_len, start_in_byte, cur_ptr, 
+                d_kmers, d_kmer_store_pos, k);
+            cur_ptr += bytes;
+            len_data = *(T_skm_len*)cur_ptr;
+        }
     }
     __syncthreads();
-    if (tid==0) printf("kmer: %llu skm: %u\n", *d_kmer_store_pos, skm_cnt);
+    if (tid==0) printf("kmer: %llu\n", *d_kmer_store_pos);
     return;
 }
 
-__global__ void resolve_skm_len (T_skm_len *d_skm_lengths_ushort, unsigned int *d_skm_byte_offs, unsigned char *d_start_offs, unsigned int cnt) {
-    int n_t = blockDim.x * gridDim.x;
-    int tid = blockDim.x * blockIdx.x + threadIdx.x;
-    for (int i=tid; i<cnt; i+=n_t) {
-        d_start_offs[i] = d_skm_lengths_ushort[i] >> 14;
-        d_skm_lengths_ushort[i] &= 0b0011111111111111;
-        d_skm_byte_offs[i] = (d_skm_lengths_ushort[i] + d_start_offs[i] + BYTE_BASES - 1) / BYTE_BASES;
-    }
-}
+#define SKM_ALIGN_EST_SIZE 1.1
 
-__host__ void load_SKM_from_file (SKMStoreNoncon &skms_store, _out_ u_char* &d_skms, _out_ T_skm_len* &d_skm_lengths) {
-    CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes));
-    CUDA_CHECK(cudaMalloc((void**) &(d_skm_lengths), skms_store.skm_cnt * sizeof(T_skm_len)));
+__host__ void load_SKM_from_file (SKMStoreNoncon &skms_store, _out_ u_char* &d_skms, cudaStream_t &stream) {
+    size_t malloc_size = SKM_ALIGN > skms_store.tot_size_bytes * SKM_ALIGN_EST_SIZE ? SKM_ALIGN : skms_store.tot_size_bytes * SKM_ALIGN_EST_SIZE;
+    CUDA_CHECK(cudaMallocAsync((void**) &(d_skms), malloc_size, stream));
+    CUDA_CHECK(cudaMemsetAsync(d_skms, 0, malloc_size, stream));
     skms_store.load_from_file();
-    CUDA_CHECK(cudaMemcpy(d_skms, skms_store.skms_from_file, skms_store.tot_size_bytes, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_skms, skms_store.skm_lengths_from_file, skms_store.skm_cnt * sizeof(T_skm_len), cudaMemcpyHostToDevice));
+    
+    size_t device_save_pos = 0;
+    T_skm_len align_size = 0;
+    T_skm_len len_data, skm_len, bytes;
+    unsigned char start_in_byte;
+    u_char *batch_ptr, *cur_ptr, *end_ptr;
+    batch_ptr = cur_ptr = skms_store.skms_from_file;
+    end_ptr = cur_ptr + skms_store.tot_size_bytes;
+    while (cur_ptr < end_ptr) {
+        len_data = *(T_skm_len*)cur_ptr;
+        _parse_length_data(len_data, start_in_byte, skm_len, bytes);
+        if (align_size + sizeof(T_skm_len) + bytes >= SKM_ALIGN - sizeof(T_skm_len)) {
+            CUDA_CHECK(cudaMemcpyAsync(d_skms+device_save_pos, batch_ptr, cur_ptr-batch_ptr, cudaMemcpyHostToDevice, stream));
+            batch_ptr = cur_ptr;
+            device_save_pos += SKM_ALIGN;
+            align_size = 0;
+        }
+        align_size += sizeof(T_skm_len) + bytes;
+        cur_ptr += sizeof(T_skm_len) + bytes;
+    }
+    CUDA_CHECK(cudaMemcpyAsync(d_skms+device_save_pos, batch_ptr, cur_ptr-batch_ptr, cudaMemcpyHostToDevice, stream));
+    CUDA_CHECK(cudaStreamSynchronize(stream));
     delete [] skms_store.skms_from_file;
-    delete [] skms_store.skm_lengths_from_file;
     return;
 }
 
@@ -146,76 +174,82 @@ float Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* d_kme
     #endif
 
     u_char *d_skms;
-    T_skm_len *d_skm_lengths;
-    u_char *d_start_offs;
-    unsigned int* d_skm_byte_offs;
     
     unsigned long long *d_kmer_store_pos;
     CUDA_CHECK(cudaMallocAsync((void**) &(d_kmer_store_pos), sizeof(size_t), stream));//
     CUDA_CHECK(cudaMemsetAsync(d_kmer_store_pos, 0, sizeof(unsigned long long), stream));
 
     // ---- copy skm chunks H2D ----
-    // load d_skms, d_skm_lengths
-    if (skms_store.to_file) load_SKM_from_file(skms_store, d_skms, d_skm_lengths);
+    // load d_skms
+    size_t malloc_size = SKM_ALIGN > skms_store.tot_size_bytes * SKM_ALIGN_EST_SIZE ? SKM_ALIGN : skms_store.tot_size_bytes * SKM_ALIGN_EST_SIZE;
+    if (skms_store.to_file) load_SKM_from_file(skms_store, d_skms, stream);
     else {
-        CUDA_CHECK(cudaMallocAsync((void**) &(d_skms), skms_store.tot_size_bytes+1, stream));//
-        CUDA_CHECK(cudaMallocAsync((void**) &(d_skm_lengths), skms_store.skm_cnt * sizeof(T_skm_len), stream));//
+        CUDA_CHECK(cudaMallocAsync((void**) &(d_skms), malloc_size, stream));
+        CUDA_CHECK(cudaMemsetAsync(d_skms, 0, malloc_size, stream)); // *1.1: assert skm len not exceed ~ SKM_ALIGN/10*4
         
         #ifdef TIMING_CUDAMEMCPY
         cudaEventRecord(memcpy_start, stream);
         #endif
     
+        T_skm_len align_size = 0;
+
         int i;
         size_t d_store_pos = 0;
-        size_t d_len_store_pos = 0;
         SkmChunk skm_bulk[1024];
         size_t count;
+
+        T_skm_len len_data, skm_len, bytes;
+        u_char start_in_byte;
+        u_char *batch_ptr, *cur_ptr, *end_ptr;
         do {
             count = skms_store.skms.try_dequeue_bulk(skm_bulk, 1024);
             for (i=0; i<count; i++) {
-                // if (i==0) {
-                //     int len = skm_bulk[i].skm_lengths[0] & 0b0011111111111111;
-                //     int start = skm_bulk[i].skm_lengths[0] >> 14;
-                //     int idx = 0;
-                //     char c[4] = {'A','C','G','T'};
-                //     cerr<<"SKM LEN:"+to_string(len)<<endl;
-                //     for (int j=0; j<len; j++) {
-                //         idx += (start==4);
-                //         start %= 4;
-                //         cerr<<c[(skm_bulk[i].skm_chunk[idx] >> ((3-start)*2)) & 0b11];
-                //         start ++;
-                //     }cerr<<endl;
+                // split the skm_chunk if size >= SKM_ALIGN - 2
+                batch_ptr = cur_ptr = skm_bulk[i].skm_chunk;
+                end_ptr = cur_ptr + skm_bulk[i].chunk_bytes;
+                while (cur_ptr < end_ptr) {
+                    len_data = *(T_skm_len*)cur_ptr;
+                    _parse_length_data(len_data, start_in_byte, skm_len, bytes);
+                    if (align_size + sizeof(T_skm_len) + bytes >= SKM_ALIGN - sizeof(T_skm_len)) {
+                        CUDA_CHECK(cudaMemcpyAsync(d_skms+d_store_pos, batch_ptr, cur_ptr-batch_ptr, cudaMemcpyHostToDevice, stream));
+                        batch_ptr = cur_ptr;
+                        // d_store_pos += SKM_ALIGN;
+                        d_store_pos = (d_store_pos / SKM_ALIGN + 1) * SKM_ALIGN;
+                        align_size = 0;
+                    }
+                    align_size += sizeof(T_skm_len) + bytes;
+                    cur_ptr += sizeof(T_skm_len) + bytes;
+                }
+                CUDA_CHECK(cudaMemcpyAsync(d_skms+d_store_pos, batch_ptr, cur_ptr-batch_ptr, cudaMemcpyHostToDevice, stream));
+                assert(cur_ptr-batch_ptr == align_size);
+                d_store_pos += cur_ptr-batch_ptr;
+
+                // assert(skm_bulk[i].chunk_bytes < SKM_ALIGN);
+                // if (align_size + skm_bulk[i].chunk_bytes >= SKM_ALIGN - sizeof(T_skm_len)) {
+                //     d_store_pos = (d_store_pos / SKM_ALIGN + 1) * SKM_ALIGN;
+                //     align_size = 0;
                 // }
-                CUDA_CHECK(cudaMemcpyAsync(d_skms+d_store_pos, skm_bulk[i].skm_chunk, skm_bulk[i].chunk_bytes, cudaMemcpyHostToDevice, stream));
-                CUDA_CHECK(cudaMemcpyAsync(d_skm_lengths+d_len_store_pos, skm_bulk[i].skm_lengths, skm_bulk[i].chunk_cnt * sizeof(T_skm_len), cudaMemcpyHostToDevice, stream));
-                d_store_pos += skm_bulk[i].chunk_bytes;
-                d_len_store_pos += skm_bulk[i].chunk_cnt; // * sizeof(T_skm_len);
+                // CUDA_CHECK(cudaMemcpyAsync(d_skms+d_store_pos, skm_bulk[i].skm_chunk, skm_bulk[i].chunk_bytes, cudaMemcpyHostToDevice, stream));
+                // d_store_pos += skm_bulk[i].chunk_bytes;
+                // align_size  += skm_bulk[i].chunk_bytes;
             }
         } while (count);
 
         #ifdef TIMING_CUDAMEMCPY
         cudaEventRecord(memcpy_end, stream);
         #endif
+
+        cerr<<"extract kmer done."<<endl;
     }
     
-    CUDA_CHECK(cudaMallocAsync((void**) &(d_start_offs), skms_store.skm_cnt, stream));//
-    CUDA_CHECK(cudaMallocAsync((void**) &(d_skm_byte_offs), (skms_store.skm_cnt+1) * sizeof(unsigned int), stream));//
-    
-    // thrust::device_vector<unsigned int> d_skm_byte_offs(skms_store.skm_cnt);
-    // transfrom ushort skm lengths to uint skm byte offs, move out d_start_offs
-    resolve_skm_len<<<BpG2, TpB2, 0, stream>>>(d_skm_lengths, d_skm_byte_offs, d_start_offs, skms_store.skm_cnt);
-    thrust::exclusive_scan(thrust::device.on(stream), d_skm_byte_offs, d_skm_byte_offs + (size_t)skms_store.skm_cnt, d_skm_byte_offs, 0); // prefix-sum and right-shift-one on d_skm_byte_offs
-
     // ---- GPU work ----
     // if (skms_store.tot_size_bytes / 4 <= BpG2 * TpB2) GPU_Extract_Kmers<<<1, skms_store.tot_size_bytes/64+1, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k); // 强行debug // mountain of shit, do not touch
     // else GPU_Extract_Kmers<<<BpG2, TpB2, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
-    GPU_Extract_Kmers<<<BpG2, TpB2, 0, stream>>>(d_skms, d_skm_lengths, d_skm_byte_offs, d_start_offs, skms_store.skm_cnt, d_kmers, d_kmer_store_pos, k);
+    GPU_Extract_Kmers<<<BpG2, TpB2, 0, stream>>>(d_skms, malloc_size, d_kmers, d_kmer_store_pos, k);
     
+    CUDA_CHECK(cudaStreamSynchronize(  stream));
     CUDA_CHECK(cudaFreeAsync(d_skms, stream));//
     CUDA_CHECK(cudaFreeAsync(d_kmer_store_pos, stream));//
-    CUDA_CHECK(cudaFreeAsync(d_skm_lengths, stream));//
-    CUDA_CHECK(cudaFreeAsync(d_start_offs, stream));//
-    CUDA_CHECK(cudaFreeAsync(d_skm_byte_offs, stream));//
     
     #ifdef TIMING_CUDAMEMCPY
     float cudamemcpy_time;

@@ -57,15 +57,9 @@ struct T_h_data {
     _out_ T_skm_partsize *skm_cnt;
     _out_ T_skm_partsize *kmer_cnt;
     _in_ _out_ T_CSR_cap *skmpart_offs;
-    _in_ _out_ T_CSR_cap *skmlen_offs;
     size_t tot_skm_bytes;
     size_t tot_skm_cnt;
     _out_ u_char *skm_store_csr;
-    _out_ T_skm_len *skm_lengths;
-
-    // // Compressed SKMs
-    // u_char **skm_data;
-    // size_t *skmpart_compressed_bytes;
 };
 
 // device data
@@ -95,10 +89,6 @@ struct T_d_data {
     T_skm_partsize *d_store_pos;        // len == SKM_part          size_t  offs to store SKM in a partition of d_skm_store_csr
     u_char *d_skm_store_csr;             // len == * part_size[p]    
     T_CSR_cap *d_skmpart_offs;          // len == * skm_cnt[p]      
-
-    T_skm_partsize *d_len_store_pos;
-    T_skm_len *d_skm_lengths;
-    T_CSR_cap *d_skmlen_offs;
 };
 
 

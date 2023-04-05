@@ -363,7 +363,14 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
         // logger->log(logs, Logger::LV_INFO);
         if (skms_stores[i]->tot_size_bytes != 0) {
             // ---- 0. Extract kmers from SKMStore: ---- 
-            kmers_d_vec[i] = thrust::device_vector<T_kmer>(skms_stores[i]->kmer_cnt);
+            beg_alloc_kmer:;
+            try {
+                kmers_d_vec[i] = thrust::device_vector<T_kmer>(skms_stores[i]->kmer_cnt);
+            } catch(thrust::system_error e) {
+                cerr<<"Out of VRAM for kmers, now retry..."<<endl;
+                this_thread::sleep_for(1000ms);
+                goto beg_alloc_kmer;
+            }
             T_kmer *d_kmers_data = thrust::raw_pointer_cast(kmers_d_vec[i].data());
             // if (GPU_compression) Extract_Kmers_Compressed(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2, gpuid);
             #ifdef TIMING_CUDAMEMCPY
@@ -392,7 +399,14 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             thrust::sort(thrust::device.on(streams[i]), kmers_d_vec[i].begin(), kmers_d_vec[i].end()/*, thrust::greater<T_kmer>()*/);
             skms_stores[i]->clear_skm_data(); // TODO: 在sort之前加streamsync
             // ---- 3. find changes: [AABBBCC] -> [0,1,0,1,1,0,1] (same_flag_d) ---- 
-            same_flag_d_vec[i] = thrust::device_vector<bool>(kmers_d_vec[i].size());
+            beg_alloc_flag:;
+            try {
+                same_flag_d_vec[i] = thrust::device_vector<bool>(kmers_d_vec[i].size());
+            } catch(thrust::system_error e) {
+                cerr<<"Out of VRAM for same_flag_d_vec, now retry..."<<endl;
+                this_thread::sleep_for(500ms);
+                goto beg_alloc_flag;
+            }
             thrust::transform(thrust::device.on(streams[i]), kmers_d_vec[i].begin()+1 /*x beg*/, kmers_d_vec[i].end() /*x end*/, kmers_d_vec[i].begin()/*y beg*/, same_flag_d_vec[i].begin()+1/*res beg*/, sameasprev());
         }
     }
@@ -405,7 +419,14 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             // ---- 3. find changes (cont'd)
             same_flag_d_vec[i][0] = 0; // will it call stream sync?
             // ---- 4. remove same idx: [0123456] [0101101] -> [0,2,5] (idx_d) ----
-            idx_d_vec[i] = thrust::device_vector<T_read_len>(kmers_d_vec[i].size());
+            beg_alloc_idx:;
+            try {
+                idx_d_vec[i] = thrust::device_vector<T_read_len>(kmers_d_vec[i].size());
+            } catch(thrust::system_error e) {
+                cerr<<"Out of VRAM for idx_d_vec, now retry..."<<endl;
+                this_thread::sleep_for(500ms);
+                goto beg_alloc_idx;
+            }
             thrust::sequence(thrust::device.on(streams[i]), idx_d_vec[i].begin(), idx_d_vec[i].end());
             auto newend_idx_d = thrust::remove_if(thrust::device.on(streams[i]), idx_d_vec[i].begin(), idx_d_vec[i].end(), same_flag_d_vec[i].begin(), thrust::identity<bool>()); // new_end_idx_d is an iterator
             // 4+. copy sorted kmers back to host

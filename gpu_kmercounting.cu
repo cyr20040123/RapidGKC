@@ -7,6 +7,12 @@ if((call) != cudaSuccess) { \
     cerr << "CUDA error calling \""#call"\", code is " << err << ": " << cudaGetErrorString(err) << endl; \
     exit(1); \
 }
+#define CUDA_MALLOC_CHECK(call) \
+while((call) != cudaSuccess) { \
+    cudaError_t err = cudaGetLastError(); \
+    cerr << "Malloc error: \""#call"\", code is " << err << ": " << cudaGetErrorString(err) << endl; \
+    this_thread::sleep_for(100ms); \
+}
 #define CUFILE_STATUS_CHECK(cuerr, lineno) \
 if (cuerr.err != CU_FILE_SUCCESS) { \
     cerr << "cuFile error calling line #" << lineno << ", code is " << cuerr.err << endl; \
@@ -262,13 +268,13 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* d_kmer
     u_char* d_skms;
     
     unsigned long long *d_kmer_store_pos;
-    CUDA_CHECK(cudaMallocAsync((void**) &(d_kmer_store_pos), sizeof(size_t), stream));
+    CUDA_MALLOC_CHECK(cudaMallocAsync((void**) &(d_kmer_store_pos), sizeof(size_t), stream));
     CUDA_CHECK(cudaMemsetAsync(d_kmer_store_pos, 0, sizeof(unsigned long long), stream));
 
     // ---- copy skm chunks H2D ----
     if (skms_store.to_file) d_skms = load_SKM_from_file(skms_store);
     else {
-        CUDA_CHECK(cudaMallocAsync((void**) &(d_skms), skms_store.tot_size_bytes+1, stream));
+        CUDA_MALLOC_CHECK(cudaMallocAsync((void**) &(d_skms), skms_store.tot_size_bytes+1, stream));
         // CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes+1));
         // u_char *d_store_pos = d_skms;
         
@@ -367,7 +373,8 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             beg_alloc_kmer:;
             try {
                 kmers_d_vec[i] = thrust::device_vector<T_kmer>(skms_stores[i]->kmer_cnt);
-            } catch(thrust::system_error e) {
+            // } catch(thrust::system_error e) {
+            } catch(thrust::system::detail::bad_alloc e) {
                 cerr<<"Out of VRAM for kmers, now retry ... "<<retry_cnt<<endl;
                 this_thread::sleep_for(500ms);
                 if (retry_cnt-- <= 0) {logger->log(e.what(), Logger::LV_FATAL); exit(1);}
@@ -405,7 +412,7 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             beg_alloc_flag:;
             try {
                 same_flag_d_vec[i] = thrust::device_vector<bool>(kmers_d_vec[i].size());
-            } catch(thrust::system_error e) {
+            } catch(thrust::system::detail::bad_alloc e) {
                 cerr<<"Out of VRAM for same_flag_d_vec, now retry..."<<endl;
                 this_thread::sleep_for(250ms);
                 if (retry_cnt-- <= 0) {logger->log(e.what(), Logger::LV_FATAL); exit(1);}
@@ -427,7 +434,7 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             beg_alloc_idx:;
             try {
                 idx_d_vec[i] = thrust::device_vector<T_read_len>(kmers_d_vec[i].size());
-            } catch(thrust::system_error e) {
+            } catch(thrust::system::detail::bad_alloc e) {
                 cerr<<"Out of VRAM for idx_d_vec, now retry..."<<endl;
                 this_thread::sleep_for(250ms);
                 if (retry_cnt-- <= 0) {logger->log(e.what(), Logger::LV_FATAL); exit(1);}

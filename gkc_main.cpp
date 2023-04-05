@@ -91,6 +91,8 @@ void phase1(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMStoreNoncon*> &
 std::atomic<int> cpu_p2_cnt{0};
 std::atomic<int> gpu_p2_cnt{0};
 
+std::atomic<int> gput_run_cpu_cnt{0};
+
 size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, vector<T_kmc> *kmc_result) {
     if (tid == 0) {
         if (store_vec[0]->id % 7 == 0) cerr<<"\r"<<(int)(store_vec[0]->id*100/PAR.SKM_partitions)<<"%";
@@ -99,7 +101,7 @@ size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, ve
     size_t res = 0;
     // if (tid / gpars.max_threads_per_gpu >= gpars.n_devices) {
     // WallClockTimer wct;
-    if ((!PAR.GPU_only) && (PAR.CPU_only || tid >= gpars.n_devices * gpars.max_threads_per_gpu)) {
+    if ((!PAR.GPU_only) && (PAR.CPU_only || tid >= gpars.n_devices * gpars.max_threads_per_gpu + gput_run_cpu_cnt)) {
         for (auto i: store_vec)
             res += KmerCountingCPU(PAR.K_kmer, i, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[i->id], tid, PAR.threads_cpu_sorter);
         // cerr<<"-";
@@ -107,7 +109,7 @@ size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, ve
         // cerr<<"-"+to_string(wct.stop());
     }
     else {
-        int gpuid = tid / gpars.max_threads_per_gpu;
+        int gpuid = (tid / gpars.max_threads_per_gpu) % (PAR.n_devices+1);
         res += kmc_counting_GPU_streams (PAR.K_kmer, store_vec, gpars, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result, gpuid, tid);
         // cerr<<"*";
         gpu_p2_cnt++;
@@ -117,7 +119,10 @@ size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, ve
 }
 size_t phase2_forceCPU (int tid, SKMStoreNoncon* skm_store, vector<T_kmc> *kmc_result) {
     cerr<<"o";
-    return KmerCountingCPU(PAR.K_kmer, skm_store, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[skm_store->id], tid, PAR.threads_cpu_sorter);
+    gput_run_cpu_cnt++;
+    size_t res = KmerCountingCPU(PAR.K_kmer, skm_store, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[skm_store->id], tid, PAR.threads_cpu_sorter);
+    gput_run_cpu_cnt--;
+    return res;
 }
 /*
 size_t p2_kmc (int tid, int max_streams, atomic<int> &i_part, vector<size_t> &distinct_kmer_cnt, vector<SKMStoreNoncon*> &skm_part_vec, vector<T_kmc> *kmc_result, CUDAParams &gpars) {

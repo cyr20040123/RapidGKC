@@ -119,6 +119,7 @@ size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, ve
 }
 size_t phase2_forceCPU (int tid, SKMStoreNoncon* skm_store, vector<T_kmc> *kmc_result) {
     cerr<<"o";
+    cpu_p2_cnt++;
     gput_run_cpu_cnt++;
     size_t res = KmerCountingCPU(PAR.K_kmer, skm_store, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[skm_store->id], tid, PAR.threads_cpu_sorter);
     gput_run_cpu_cnt--;

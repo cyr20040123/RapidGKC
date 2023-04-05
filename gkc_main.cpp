@@ -12,6 +12,11 @@
 #include "gpu_skmgen.h"
 #include "gpu_kmercounting.h"
 #include "thread_pool.hpp"
+
+#ifdef MMFILTER_TIMING
+#include "minimizer_filter.h"
+#endif
+
 using namespace std;
 
 Logger *logger;
@@ -188,9 +193,12 @@ size_t p2_kmc (int tid, int max_streams, atomic<int> &i_part, vector<size_t> &di
     return j-i;
 }
 */
-#define TIMING_CUDAMEMCPY
 #ifdef TIMING_CUDAMEMCPY
 atomic<int> debug_cudacp_timing;
+#endif
+
+#ifdef MMFILTER_TIMING
+atomic<int> mm_filter_tot_time{0};
 #endif
 
 void KmerCounting_TP(CUDAParams &gpars) {
@@ -239,6 +247,9 @@ void KmerCounting_TP(CUDAParams &gpars) {
     }
     
     double p1_time = wct1.stop();
+    #ifdef MMFILTER_TIMING
+    logger->log("FILTER: " STR(FILTER_KERNEL) " Kernel Functions Time: "+to_string(mm_filter_tot_time)+" ms", Logger::LV_INFO);
+    #endif
     logger->log("**** All reads loaded and SKMs generated (Phase 1 ends) ****", Logger::LV_NOTICE);
     logger->log("     Phase 1 Time: " + to_string(p1_time) + " sec", Logger::LV_NOTICE);
 

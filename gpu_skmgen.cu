@@ -1,11 +1,7 @@
 #define _in_
 #define _out_
 
-// #define KERNEL_TIME_MEASUREMENT
-
-#define FILTER_KERNEL new_filter2 // modify this to change filter: mm_filter, sign_filter, new_filter, new_filter2
-#define STR1(R)  #R
-#define STR(R) STR1(R)
+// #define MMFILTER_TIMING
 
 #include "gpu_skmgen.h"
 #include "types.h"
@@ -14,6 +10,7 @@
 #include <cuda_runtime_api.h>
 // #include "nvcomp/gdeflate.hpp"
 // #include "nvcomp.hpp"
+#include "minimizer_filter.h"
 
 #include <vector>
 #include <string>
@@ -176,29 +173,32 @@ __global__ void GPU_HPCEncoding (
 }
 
 // ======== Minimizer Functions ========
-// traditional minimizer
 __device__ __forceinline__ bool mm_filter(T_minimizer mm, int p) {
-    // return mm%101>80; // 20.36
-    // return ((mm >> ((p-3)*2)) != 0) /*AAA*/ & (mm >> ((p-3)*2) != 0b000100) /*ACA*/; // 19.94
-    // return ((mm >> (p-2)*2) & 0b11) + ((mm >> (p-3)*2) & 0b11) + ((mm >> (p-1)*2) & 0b11); // 20.03
-    // return (mm >> (p-3)*2) * ((mm >> (p-5)*2) & 0b111111); // 20.02
-    // return ((mm >> ((p-3)*2)) != 0) /*AAA*/ & (mm >> ((p-3)*2) != 0b000100) /*ACA*/ & (mm >> ((p-3)*2) != 0b001000); // 19.92
-    // int i=0;
-    // int s=0;
-    // for (i=1; i<3; i++) {
-    //     s += (mm >> ((p-2)*2)) > (mm>>((p-2-i))&0b1111);
-    // }
-    // return s==0;
-    return true;
+    MM_FILTER
 }
-// new design: 2nd/3rd不都为a
-__device__ __forceinline__ bool new_filter(T_minimizer mm, int p) {
-    return ((mm >> (p-2)*2) & 0b11) + ((mm >> (p-3)*2) & 0b11);
-}
-__device__ __forceinline__ bool new_filter2(T_minimizer mm, int p) {
-    // return ((mm >> ((p-3)*2)) != 0) /*AAA*/ & (mm >> ((p-3)*2) != 0b000100) /*ACA*/; //& (mm >> ((p-3)*2) != 0b001000) /*AGA*/;
-    return ((((mm >> ((p-3)*2)) & 0b111011) != 0/*no AAA ACA*/) & ((mm & 0b111111) != 0/*no AAA at last*/));
-}
+// traditional minimizer
+// __device__ __forceinline__ bool mm_filter(T_minimizer mm, int p) {
+//     // return mm%101>80; // 20.36
+//     // return ((mm >> ((p-3)*2)) != 0) /*AAA*/ & (mm >> ((p-3)*2) != 0b000100) /*ACA*/; // 19.94
+//     // return ((mm >> (p-2)*2) & 0b11) + ((mm >> (p-3)*2) & 0b11) + ((mm >> (p-1)*2) & 0b11); // 20.03
+//     // return (mm >> (p-3)*2) * ((mm >> (p-5)*2) & 0b111111); // 20.02
+//     // return ((mm >> ((p-3)*2)) != 0) /*AAA*/ & (mm >> ((p-3)*2) != 0b000100) /*ACA*/ & (mm >> ((p-3)*2) != 0b001000); // 19.92
+//     // int i=0;
+//     // int s=0;
+//     // for (i=1; i<3; i++) {
+//     //     s += (mm >> ((p-2)*2)) > (mm>>((p-2-i))&0b1111);
+//     // }
+//     // return s==0;
+//     return true;
+// }
+// // new design: 2nd/3rd不都为a
+// __device__ __forceinline__ bool new_filter(T_minimizer mm, int p) {
+//     return ((mm >> (p-2)*2) & 0b11) + ((mm >> (p-3)*2) & 0b11);
+// }
+// __device__ __forceinline__ bool new_filter2(T_minimizer mm, int p) {
+//     // return ((mm >> ((p-3)*2)) != 0) /*AAA*/ & (mm >> ((p-3)*2) != 0b000100) /*ACA*/; //& (mm >> ((p-3)*2) != 0b001000) /*AGA*/;
+//     return ((((mm >> ((p-3)*2)) & 0b111011) != 0/*no AAA ACA*/) & ((mm & 0b111111) != 0/*no AAA at last*/));
+// }
 // KMC2 signature
 __device__ bool sign_filter(T_minimizer mm, int p) {
     T_minimizer t = mm;
@@ -240,7 +240,7 @@ __global__ void GPU_GenMinimizer(
             for (j = cur_kmer_i; j < cur_kmer_i + P_minimizer; j++) {
                 new_mm = (new_mm << 2) | d_basemap[*(read+j)];
             }
-            mm_check = FILTER_KERNEL(new_mm, P_minimizer);
+            mm_check = mm_filter(new_mm, P_minimizer);
             mm = new_mm * mm_check + mm_mask * (!mm_check); // if not a minimizer, let it be maximal (no minimizer can be maximal because canonical)
             
             // gen the first RC p-mer:
@@ -248,7 +248,7 @@ __global__ void GPU_GenMinimizer(
             for (j = cur_kmer_i + P_minimizer - 1; j >= cur_kmer_i; j--) {
                 new_mm_rc = (new_mm_rc << 2) | d_basemap_compl[*(read+j)];
             }
-            mm_check = FILTER_KERNEL(new_mm_rc, P_minimizer);
+            mm_check = mm_filter(new_mm_rc, P_minimizer);
             mm_rc = new_mm_rc * mm_check + mm_mask * (!mm_check);
 
             mm_set = (mm_rc < mm) * mm_rc + (mm_rc >= mm) * mm;////////////
@@ -259,9 +259,9 @@ __global__ void GPU_GenMinimizer(
                 new_mm = ((new_mm << 2) | d_basemap[*(read+j)]) & mm_mask;
                 new_mm_rc = (new_mm_rc >> 2) | (d_basemap_compl[*(read+j)] << (P_minimizer*2-2));
                 // check new minimizers
-                mm_check = FILTER_KERNEL(new_mm, P_minimizer);
+                mm_check = mm_filter(new_mm, P_minimizer);
                 mm = new_mm * mm_check + mm * (!mm_check);
-                mm_check = FILTER_KERNEL(new_mm_rc, P_minimizer);
+                mm_check = mm_filter(new_mm_rc, P_minimizer);
                 mm_rc = new_mm_rc * mm_check + mm_rc * (!mm_check);
                 // set the best minimizer
                 mm_set = (mm_set < mm) * mm_set + (mm_set >= mm) * mm;
@@ -496,6 +496,10 @@ __host__ size_t GPUReset(int did) {
     return avail;
 }
 
+#ifdef MMFILTER_TIMING
+extern atomic<int> mm_filter_tot_time;
+#endif
+
 // provide pinned_reads from the shortest to the longest read
 __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
     const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars, CountTask task,
@@ -503,7 +507,10 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
     int tid
     /*atomic<size_t> skm_part_sizes[]*/) {
     
-    int time_all=0, time_filter=0;
+    #ifdef MMFILTER_TIMING
+    cudaEvent_t start[gpars.n_streams], stop[gpars.n_streams];
+    float time_filter=0, time_filter_stream;
+    #endif
 
     int gpuid = (gpars.device_id++) % gpars.n_devices;
     CUDA_CHECK(cudaSetDevice(gpuid));
@@ -567,25 +574,18 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_read_offs, &(pinned_reads.reads_offs[cur_read]), sizeof(T_CSR_cap) * (gpu_data[i].reads_cnt+1), cudaMemcpyHostToDevice, streams[i]));
             
             // ---- GPU gen skm ----
-            #ifdef KERNEL_TIME_MEASUREMENT
-            WallClockTimer wct;
-            #endif
             MoveOffset<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>>(
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_offs, 0
             );
-            #ifdef KERNEL_TIME_MEASUREMENT
-            CUDA_CHECK(cudaStreamSynchronize(streams[i]));
-            #endif
             
             GPU_HPCEncoding<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>>(
                 gpu_data[i].reads_cnt,  gpu_data[i].d_read_len, 
                 gpu_data[i].d_reads,    gpu_data[i].d_read_offs, 
                 HPC,                    gpu_data[i].d_hpc_orig_pos
             );
-            #ifdef KERNEL_TIME_MEASUREMENT
-            CUDA_CHECK(cudaStreamSynchronize(streams[i]));
-            
-            WallClockTimer wct2;
+            #ifdef MMFILTER_TIMING
+            cudaEventCreate(&start[i]); cudaEventCreate(&stop[i]);
+            cudaEventRecord(start[i], streams[i]);
             #endif
             GPU_GenMinimizer<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>>(
                 gpu_data[i].reads_cnt,  gpu_data[i].d_read_len,
@@ -593,9 +593,8 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 gpu_data[i].d_minimizers, 
                 K_kmer, P_minimizer
             );
-            #ifdef KERNEL_TIME_MEASUREMENT
-            CUDA_CHECK(cudaStreamSynchronize(streams[i]));
-            time_filter += wct2.stop(true);
+            #ifdef MMFILTER_TIMING
+            cudaEventRecord(stop[i], streams[i]);
             #endif
             
             GPU_GenSKMOffs<<<gpars.BpG1, gpars.TpB1, 2*SKM_partitions*sizeof(unsigned int), streams[i]>>>(
@@ -607,10 +606,6 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 gpu_data[i].d_kmer_cnt,
                 K_kmer, P_minimizer, SKM_partitions
             );
-            #ifdef KERNEL_TIME_MEASUREMENT
-            CUDA_CHECK(cudaStreamSynchronize(streams[i]));
-            time_all += wct.stop(true);
-            #endif
             
             GPU_ReadCompression<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>>(
                 gpu_data[i].d_reads, gpu_data[i].d_read_offs, gpu_data[i].d_read_len, gpu_data[i].reads_cnt
@@ -635,6 +630,10 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
         for (i = 0; i < started_streams; i++) {
             
             CUDA_CHECK(cudaStreamSynchronize(streams[i])); // for host skm_part_bytes and skm_cnt
+            #ifdef MMFILTER_TIMING
+            cudaEventElapsedTime(&time_filter_stream, start[i], stop[i]);
+            time_filter += time_filter_stream;
+            #endif
             
             // ---- CPU calc bytes of total skm partition and offsets ----
             host_data[i].tot_skm_bytes = 0;
@@ -712,6 +711,8 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
         }
     }
     logger->log(logs);
-    if (time_all!=0)
-        logger->log("FILTER: " STR(FILTER_KERNEL) " Kernel Functions Time: ALL = "+to_string(time_all)+"ms FILTER = "+to_string(time_filter)+"ms");
+    #ifdef MMFILTER_TIMING
+    mm_filter_tot_time += int(time_filter);
+    // logger->log("FILTER: " STR(FILTER_KERNEL) " Kernel Functions Time: "+to_string(time_filter)+" sec", Logger::LV_INFO);
+    #endif
 }

@@ -1,5 +1,5 @@
 // #define GPU_EXTRACT_TIMING
-#define TIMING_CUDAMEMCPY
+// #define TIMING_CUDAMEMCPY
 
 #define CUDA_CHECK(call) \
 if((call) != cudaSuccess) { \
@@ -246,7 +246,11 @@ __host__ u_char* load_SKM_from_file (SKMStoreNoncon &skms_store) {
     return d_skms;
 }
 
+#ifdef TIMING_CUDAMEMCPY
 float Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* d_kmers, cudaStream_t &stream, int BpG2=8, int TpB2=256) {
+#else
+void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* d_kmers, cudaStream_t &stream, int BpG2=8, int TpB2=256) {
+#endif
     // cudaStream_t stream;
     // CUDA_CHECK(cudaStreamCreate(&stream));
     

@@ -1,8 +1,6 @@
 #ifndef _CONCQUEUE_HPP
 #define _CONCQUEUE_HPP
 
-#define WAITMEASURE
-
 #include <mutex>
 #include <deque>
 #include <condition_variable>

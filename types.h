@@ -1,3 +1,6 @@
+#define STR1(R)  #R
+#define STR(R) STR1(R)
+
 #ifndef _TYPES_H
 #define _TYPES_H
 

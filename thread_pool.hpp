@@ -144,7 +144,9 @@ public:
         _CQ.finish();
         _holder_cv.notify_all();
         for (auto &t: _threads) if (t.joinable()) t.join();
+        #ifdef WAITMEASURE
         std::cerr<<"  Thread Pool wait: "<<_CQ.debug_pop_wait<<std::endl;
+        #endif
     }
     void hold_when_busy () {
         std::unique_lock<std::mutex> tmp_lck(_holder_mtx);

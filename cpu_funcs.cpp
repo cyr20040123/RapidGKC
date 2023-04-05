@@ -3,7 +3,7 @@
 #include <cstring>
 #include <algorithm>
 #include <thread>
-
+#include "minimizer_filter.h"
 /*
 #include <fcntl.h>      // open
 #include <sys/mman.h>   // mmap
@@ -98,7 +98,8 @@ T_read_len _hpc_encoding (T_read_len len, const char* raw_read, u_char* hpc_read
 }
 bool new_filter2(T_minimizer mm, int p) {
     // return ((((mm >> ((p-3)*2)) & 0b111011) != 0/*no AAA ACA*/) & ((mm & 0b111111) != 0/*no AAA at last*/));
-    return ((mm >> ((p-3)*2)) & 0b111011) && (mm & 0b111111);
+    // return ((mm >> ((p-3)*2)) & 0b111011) && (mm & 0b111111);
+    MM_FILTER
 }
 /**
  * Filter pmer and pmer_rc, store the minimizer to mm, return if the minimizer was updated.

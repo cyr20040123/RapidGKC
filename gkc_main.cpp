@@ -302,14 +302,15 @@ void KmerCounting_TP(CUDAParams &gpars) {
     ThreadPool<void> tp_fileloader(2); //async file loader
     SKMStoreNoncon *tmp_part;
     int j;
+    vector<int> toolarge_bins;
     for (i=0; i<PAR.SKM_partitions; i=j) {
         long long vram_avail = gpars.vram[0] / PAR.max_threads_per_gpu;
         vector<SKMStoreNoncon*> store_vec;
         // group a batch of skm partitions for GPU:
         for (j = i; j < i+max_streams && j < PAR.SKM_partitions; j++) {
-            if (vram_avail - skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) * 2 > 0.1 * gpars.vram[0]) {
+            if (vram_avail - skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) * 2.5 > 0.1 * gpars.vram[0]) {
                 store_vec.push_back(skm_part_vec[j]);
-                vram_avail -= skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) * 2;
+                vram_avail -= skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) * 2.5;
                 if (PAR.to_file) {
                     tp.hold_when_busy();
                     tmp_part = skm_part_vec[j];
@@ -318,7 +319,8 @@ void KmerCounting_TP(CUDAParams &gpars) {
             } else break;
         }
         if (store_vec.size() == 0) { // if VRAM is not enough to handle even one partition, force using CPU
-            logger->log("Part "+to_string(j)+" is too large to be handled by GPU, use CPU...", Logger::LV_WARNING);
+            toolarge_bins.push_back(j);
+            // logger->log("Part "+to_string(j)+" is too large to be handled by GPU, use CPU...", Logger::LV_WARNING);
             SKMStoreNoncon *t = skm_part_vec[j];
             distinct_kmer_cnt[i] = tp.commit_task([t, &kmc_result](int tid){
                 return phase2_forceCPU (tid, t, kmc_result);
@@ -328,6 +330,13 @@ void KmerCounting_TP(CUDAParams &gpars) {
             distinct_kmer_cnt[i] = tp.commit_task([store_vec, &gpars, &kmc_result](int tid){
                 return phase2 (tid, store_vec, gpars, kmc_result);
             });
+        }
+    }
+    if (toolarge_bins.size() > 0) {
+        logger->log(to_string(toolarge_bins.size())+" partition(s) are too large to be handled by GPU, use CPU.", Logger::LV_WARNING);
+        if (toolarge_bins.size() <= 16) {
+            for (auto i: toolarge_bins) cerr<<"Part-"<<i<<"\t";
+            cerr<<endl;
         }
     }
     tp_fileloader.finish();

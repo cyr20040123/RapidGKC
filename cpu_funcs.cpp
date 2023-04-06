@@ -15,7 +15,7 @@
 
 using namespace std;
 
-extern PriorMutex *pm;
+// extern PriorMutex *pm;
 
 const unsigned char basemap[256] = {
     255, 255, 255, 255, 255, 255, 255, 255, // 0..7
@@ -229,7 +229,7 @@ void gen_skms (u_char *read, T_read_len len, T_read_len *skm_offs, T_minimizer *
         skm_size_bytes = _skm_bytes_required(skm_offs[i], skm_offs[i+1], K_kmer);
         if (skm_buf_pos[partition] + skm_size_bytes >= buffer_size) {
             // save skms to SKMStoreNoncon
-            SKMStoreNoncon::save_skms(skm_partition_stores[partition], skm_cnt[partition], kmer_cnt[partition], skm_buffer[partition], skm_buf_pos[partition], buffer_size, true);//
+            SKMStoreNoncon::save_skms(skm_partition_stores[partition], skm_cnt[partition], kmer_cnt[partition], skm_buffer[partition], skm_buf_pos[partition], buffer_size, false);//
             skm_buffer[partition] = new u_char [buffer_size];//
             skm_buf_pos[partition] = 0;
             skm_cnt[partition] = 0;
@@ -292,7 +292,7 @@ void GenSuperkmerCPU (vector<ReadPtr> &reads,
     
     // dump skm buffer to store
     for (i=0; i<SKM_partitions; i++)
-        SKMStoreNoncon::save_skms(skm_partition_stores[i], skm_cnt[i], kmer_cnt[i], skm_buffer[i], skm_buf_pos[i], SKM_BUFFER_SIZE, true);//
+        SKMStoreNoncon::save_skms(skm_partition_stores[i], skm_cnt[i], kmer_cnt[i], skm_buffer[i], skm_buf_pos[i], SKM_BUFFER_SIZE, false);//
         // delete skm_buffer[i]; // No need to delete here. The right is passed to func save_skms.
     logger->log("-- BATCH  CPU (T"+to_string(tid)+"): #reads: "+to_string(reads.size())+" --  "+to_string(wct.stop()));
 }
@@ -347,7 +347,7 @@ void _inplace_reorder (_out_ T_kmer *kmers, T_skm_partsize n_kmers, int right_sh
 void _reorder (_out_ T_kmer *kmers, T_skm_partsize n_kmers, int right_shift, const T_kmer base_mask, const int NB, size_t *offs) {
     right_shift = right_shift > 0 ? right_shift : 0;
     T_kmer *swap = new T_kmer [n_kmers];//
-    pm->low_check_wait();
+    // pm->low_check_wait();
     memcpy(swap, kmers, n_kmers * sizeof(T_kmer));
 
     size_t i = 0;
@@ -536,6 +536,7 @@ void extract_kmers_cpu (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* km
     u_char* skms;
     size_t i;
     if (skms_store.to_file) {
+        // pm->low_check_wait();
         skms_store.load_from_file();
         skms = skms_store.skms_from_file;
     }
@@ -550,7 +551,7 @@ void extract_kmers_cpu (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* km
         do {
             count = skms_store.skms.try_dequeue_bulk(skm_bulk, 1024);
             for (i=0; i<count; i++) {
-                pm->low_check_wait();
+                // pm->low_check_wait();
                 memcpy(skms+skm_store_pos, skm_bulk[i].skm_chunk, skm_bulk[i].chunk_bytes);
                 skm_store_pos += skm_bulk[i].chunk_bytes;
             }

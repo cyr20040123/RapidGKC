@@ -54,17 +54,20 @@ private:
     std::condition_variable _cv;
     std::mutex _mtx;
     std::atomic_int _running{0};
+    std::atomic<int> _is_waiting{0};
 public:
     void high_lock () {
         _running++;
     }
     void high_unlock () {
-        if (_running.fetch_sub(1) == 1) _cv.notify_all();
+        if (_running.fetch_sub(1) == 1 && _is_waiting) _cv.notify_all();
     }
     void low_check_wait () {
         if (_running == 0) return;
+        _is_waiting++;
         std::unique_lock<std::mutex> lck(_mtx);
         while(!_cv.wait_for(lck, 100ms, [this]{return this->_running == 0;}));
+        _is_waiting--;
     }
 };
 

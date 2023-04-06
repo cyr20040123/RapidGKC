@@ -334,7 +334,7 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* d_kmer
 extern atomic<int> debug_cudacp_timing;
 #endif
 
-extern PriorMutex *pm;
+// extern PriorMutex *pm;
 
 __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
                                vector<SKMStoreNoncon*> skms_stores, CUDAParams &gpars,
@@ -387,7 +387,7 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             }
             T_kmer *d_kmers_data = thrust::raw_pointer_cast(kmers_d_vec[i].data());
             // if (GPU_compression) Extract_Kmers_Compressed(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2, gpuid);
-            pm->high_lock();
+            // pm->high_lock();
             #ifdef TIMING_CUDAMEMCPY
             float timing = Extract_Kmers(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2);
             debug_cudacp_timing += (int)timing;
@@ -396,7 +396,7 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             #else
             /*else*/ Extract_Kmers(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2);
             #endif
-            pm->high_unlock();
+            // pm->high_unlock();
             tot_kmers[i] = kmers_d_vec[i].size();
         }
         #ifdef GPU_EXTRACT_TIMING

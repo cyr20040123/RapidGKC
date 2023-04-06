@@ -312,7 +312,7 @@ void KmerCounting_TP(CUDAParams &gpars) {
     #endif
     future<size_t> distinct_kmer_cnt[PAR.SKM_partitions];
     ThreadPool<size_t> tp(PAR.N_threads, PAR.threads_p2 + 2); //,{0,PAR.N_threads,0,PAR.max_threads_per_gpu});
-    ThreadPool<void> tp_fileloader(2); //async file loader
+    ThreadPool<void> tp_fileloader(1); //async file loader
     SKMStoreNoncon *tmp_part;
     int j;
     vector<int> toolarge_bins;

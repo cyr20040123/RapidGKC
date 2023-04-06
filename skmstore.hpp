@@ -102,12 +102,12 @@ public:
     void load_from_file() {
         data_mtx.lock();
         if (skms_from_file == nullptr) {
-            FILE* fp;
-            fp = fopen(filename.c_str(), "rb");
-            assert(fp);
+            FILE* myfp;
+            myfp = fopen(filename.c_str(), "rb");
+            assert(myfp);
             skms_from_file = new u_char[tot_size_bytes];
-            assert(fread(skms_from_file, 1, tot_size_bytes, fp) == tot_size_bytes);
-            fclose(fp);
+            assert(fread(skms_from_file, 1, tot_size_bytes, myfp) == tot_size_bytes);
+            fclose(myfp);
         }
         data_mtx.unlock();
         return;

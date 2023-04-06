@@ -66,7 +66,7 @@ public:
         if (_running == 0) return;
         _is_waiting++;
         std::unique_lock<std::mutex> lck(_mtx);
-        while(!_cv.wait_for(lck, 100ms, [this]{return this->_running == 0;}));
+        for(int i=0; i<10 && !_cv.wait_for(lck, 100ms, [this]{return this->_running == 0;}); i++);
         _is_waiting--;
     }
 };

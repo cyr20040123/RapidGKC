@@ -461,12 +461,12 @@ public:
     #endif
     #ifdef WAITMEASURE
     void output_wait () {
-        std::cout<<"1 Load    push wait: "<<_DBQ.debug_push_wait<<"\tpop wait: "<<_DBQ.debug_pop_wait<<std::endl;
-        std::cout<<"2 Newline push wait: "<<_LBQ.debug_push_wait<<"\tpop wait: "<<_LBQ.debug_pop_wait<<std::endl;
+        std::cout<<"1 Load    push wait: "<<_DBQ.debug_push_wait<<"\tpop wait: "<<_DBQ.debug_pop_wait<<"\tsize: "<<_DBQ.size_est()<<std::endl;
+        std::cout<<"2 Newline push wait: "<<_LBQ.debug_push_wait<<"\tpop wait: "<<_LBQ.debug_pop_wait<<"\tsize: "<<_LBQ.size_est()<<std::endl;
         #ifdef STEP3P
         std::cout<<"    _LBQ2 push wait: "<<_LBQ2.debug_push_wait<<"\tpop wait: "<<_LBQ2.debug_pop_wait<<std::endl;
         #endif
-        std::cout<<"3 Extract push wait: "<<_RBQ.debug_push_wait<<"\tpop wait: "<<_RBQ.debug_pop_wait<<std::endl;
+        std::cout<<"3 Extract push wait: "<<_RBQ.debug_push_wait<<"\tpop wait: "<<_RBQ.debug_pop_wait<<"\tsize: "<<_RBQ.size_est()<<std::endl;
     }
     #endif
     static void work_while_loading (T_kvalue K_kmer, std::function<void(std::vector<ReadPtr>&, int)> work_func, int worker_threads, std::vector<std::string> &filenames, 
@@ -685,9 +685,9 @@ public:
     }
     #ifdef WAITMEASURE
     void output_wait () {
-        std::cout<<"1 Load    push wait: "<<_DBQ.debug_push_wait<<"\tpop wait: "<<_DBQ.debug_pop_wait<<std::endl;
-        std::cout<<"2 Newline push wait: "<<_LBQ.debug_push_wait<<"\tpop wait: "<<_LBQ.debug_pop_wait<<std::endl;
-        std::cout<<"3 Extract push wait: "<<_RBQ->debug_push_wait<<"\tpop wait: "<<_RBQ->debug_pop_wait<<std::endl;
+        std::cout<<"1 Load    push wait: "<<_DBQ.debug_push_wait<<"\tpop wait: "<<_DBQ.debug_pop_wait<<"\tsize: "<<_DBQ.size_est()<<std::endl;
+        std::cout<<"2 Newline push wait: "<<_LBQ.debug_push_wait<<"\tpop wait: "<<_LBQ.debug_pop_wait<<"\tsize: "<<_LBQ.size_est()<<std::endl;
+        std::cout<<"3 Extract push wait: "<<_RBQ->debug_push_wait<<"\tpop wait: "<<_RBQ->debug_pop_wait<<"\tsize: "<<_RBQ->size_est()<<std::endl;
     }
     #endif
     static void work_while_loading_gz (T_kvalue K_kmer, std::function<void(std::vector<ReadPtr>&, int)> work_func, int worker_threads, 

@@ -313,13 +313,13 @@ void KmerCounting_TP(CUDAParams &gpars) {
     int j;
     vector<int> toolarge_bins;
     for (i=0; i<PAR.SKM_partitions; i=j) {
-        long long vram_avail = gpars.vram[0] / min(PAR.threads_p2, PAR.max_threads_per_gpu);
+        long long vram_avail = gpars.vram[0] / max(1, min(PAR.threads_p2, PAR.max_threads_per_gpu/2));
         vector<SKMStoreNoncon*> store_vec;
         // group a batch of skm partitions for GPU:
         for (j = i; j < i+max_streams && j < PAR.SKM_partitions; j++) {
-            if (vram_avail - skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) * 2 > 0.1 * gpars.vram[0]) {
+            if (vram_avail - skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) * 3 > 0.1 * gpars.vram[0]) {
                 store_vec.push_back(skm_part_vec[j]);
-                vram_avail -= skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) * 2;
+                vram_avail -= skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) * 3;
                 if (PAR.to_file) {
                     tp.hold_when_busy();
                     tmp_part = skm_part_vec[j];

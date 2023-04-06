@@ -150,7 +150,7 @@ public:
     }
     void hold_when_busy () {
         std::unique_lock<std::mutex> tmp_lck(_holder_mtx);
-        _holder_cv.wait(tmp_lck, [=](){return this->_not_busy();});
+        while(!_holder_cv.wait_for(tmp_lck, 500ms, [=](){return this->_not_busy();}));
     }
     // static void set_thread_affinity(int core = 0) {
     //     assert(core < std::thread::hardware_concurrency());

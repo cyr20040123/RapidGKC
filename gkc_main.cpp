@@ -221,7 +221,9 @@ void KmerCounting_TP(CUDAParams &gpars) {
     logger->log("**** Phase 1: Loading and generate superkmers ****", Logger::LV_NOTICE);
     WallClockTimer wct1;
     
-    for (i=0; i<PAR.SKM_partitions; i++) skm_part_vec.push_back(new SKMStoreNoncon(i, PAR.to_file));// deleted in kmc_counting_GPU
+    FileWriter *fw = nullptr;
+    if (PAR.to_file) fw = new FileWriter();
+    for (i=0; i<PAR.SKM_partitions; i++) skm_part_vec.push_back(new SKMStoreNoncon(i, PAR.to_file, fw));// deleted in kmc_counting_GPU
     
     // for (auto readfile:PAR.read_files) {
     //     WallClockTimer wct_tmp;
@@ -245,6 +247,8 @@ void KmerCounting_TP(CUDAParams &gpars) {
             [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){phase1(reads, gpars, skm_part_vec, tid);},
             PAR.N_threads, PAR.read_files, PAR.Batch_read_loading, PAR.Buffer_size_MB*PAR.N_threads);
     }
+
+    if (PAR.to_file) fw->finish();
 
     size_t skm_tot_cnt = 0, skm_tot_bytes = 0, kmer_tot_cnt = 0;
     for(i=0; i<PAR.SKM_partitions; i++) {

@@ -9,6 +9,8 @@
 #include "types.h"
 #include "utilities.hpp"
 #include "concurrent_queue.h"
+#include "concqueue.hpp"
+#include <future>
 #include <iostream>
 // #define DEBUG
 #include <cassert>
@@ -19,9 +21,48 @@ struct SKM {
     u_char* skm_chunk;
 };
 
+struct write_task{
+    u_char* data;
+    size_t size;
+    FILE* fp;
+    u_char* del;
+};
+class FileWriter {
+private:
+    ConcQueue<write_task> _tasks;
+    ConcQueue<u_char*> _delete;
+    std::future<void> _fu;
+    std::future<void> _fudel;
+public:
+    FileWriter() {
+        _fu = std::async([this](){
+            write_task t;
+            while (this->_tasks.pop(t)) {
+                fwrite(t.data, 1, t.size, t.fp);
+                if (t.del != nullptr) this->_delete.push(t.del);
+            }
+            this->_delete.finish();
+        });
+        _fudel = std::async([this](){
+            u_char* t;
+            while(this->_delete.pop(t)) delete t;
+        });
+    }
+    void write(u_char* data, size_t size, FILE* fp, u_char* delete_data = nullptr) {
+        write_task t{data, size, fp, delete_data};
+        _tasks.wait_push(t, 65536);
+    }
+    void finish() {
+        _tasks.finish();
+        _fu.get();
+        _fudel.get();
+    }
+};
+
 class SKMStoreNoncon {
 public:
     // file
+    FileWriter *fw;
     bool to_file = false;
     FILE *fp;
     int id = -1;
@@ -85,10 +126,11 @@ public:
         file_closed = true;
     }
 
-    SKMStoreNoncon (int id = -1, bool to_file = false) {
+    SKMStoreNoncon (int id = -1, bool to_file = false, FileWriter *fw = nullptr) {
         this->to_file = to_file;
         this->id = id;
         if (to_file) {
+            this->fw = fw;
             filename = PAR.tmp_file_folder+to_string(id)+".skm";
             fp = fopen(filename.c_str(), "wb");
             #ifdef DEBUG
@@ -98,19 +140,20 @@ public:
         }
     }
     void _add_skms_to_file (u_char* skms_chunk, size_t data_bytes, size_t b_skm_cnt, size_t b_kmer_cnt, bool flush = false) {
-        data_mtx.lock();
-        _write_to_file (skms_chunk, data_bytes);
-        if (flush && flush_cnt++ > 8192) {fflush(fp); flush_cnt=0;}
-        data_mtx.unlock();
+        // data_mtx.lock();
+        // // _write_to_file (skms_chunk, data_bytes);
+        // // if (flush && flush_cnt++ > 8192) {fflush(fp); flush_cnt=0;}
+        // data_mtx.unlock();
+        fw->write(skms_chunk, data_bytes, this->fp, skms_chunk);
         this->tot_size_bytes += data_bytes;
         this->skm_cnt += b_skm_cnt;
         this->kmer_cnt += b_kmer_cnt;
     }
-    /// @brief add skms directly from a chunk
+    /// @brief add skms directly from a chunk (FOR GPU GENERATED SKMS, NO DELETE AFTER)
     /// @param skms_chunk the chunk which stores multiple skms
     /// @param data_bytes the uncompressed size in bytes of this chunk
     /// @param compressed_bytes the compressed size in bytes of this chunk
-    void add_skms (u_char* skms_chunk, size_t data_bytes, size_t b_skm_cnt, size_t b_kmer_cnt/*, size_t compressed_bytes = 0*/) {
+    void add_skms (u_char* skms_chunk, size_t data_bytes, size_t b_skm_cnt, size_t b_kmer_cnt/*, size_t compressed_bytes = 0*/, u_char* delete_data = nullptr) {
         #ifdef SKMSTOREV1
         data_mtx.lock();
         #endif
@@ -119,11 +162,12 @@ public:
             assert (compressed_bytes==0);
             #endif
             #ifndef SKMSTOREV1
-            data_mtx.lock();
+            // data_mtx.lock();
             #endif
-            _write_to_file (skms_chunk, data_bytes);
+            // _write_to_file (skms_chunk, data_bytes);
+            fw->write(skms_chunk, data_bytes, this->fp, delete_data);
             #ifndef SKMSTOREV1
-            data_mtx.unlock();
+            // data_mtx.unlock();
             #endif
         } else {
             #ifdef SKMSTOREV1
@@ -169,7 +213,7 @@ public:
     // }
     // #endif
 
-    /// @brief for uncompressed skms saving, do not support delete in advance
+    /// @brief for uncompressed skms saving, do not support delete in advance, CALLED BY GPU WORKER
     /// @param skms_stores SKMStoreNoncon * N_Partitions
     /// @param skm_cnt number of skms of each partition
     /// @param kmer_cnt number of kmers of each partition
@@ -180,9 +224,15 @@ public:
         // [<part0><part1><part2><...>]
         int i;
         int SKM_partitions = skms_stores.size();
-        for (i=0; i<SKM_partitions; i++)
-            skms_stores[i]->add_skms(&skm_store_csr[skmpart_offs[i]], skmpart_offs[i+1]-skmpart_offs[i], skm_cnt[i], kmer_cnt[i]);
-        if (skms_stores[0]->to_file) delete skm_store_csr;//
+        for (i=0; i<SKM_partitions-1; i++) {
+            if (skmpart_offs[i+1]-skmpart_offs[i] > 0)
+                skms_stores[i]->add_skms(&skm_store_csr[skmpart_offs[i]], skmpart_offs[i+1]-skmpart_offs[i], skm_cnt[i], kmer_cnt[i]);
+        }
+        if (skms_stores[0]->to_file) 
+            // delete skm_store_csr;//
+            skms_stores[i]->add_skms(&skm_store_csr[skmpart_offs[i]], skmpart_offs[i+1]-skmpart_offs[i], skm_cnt[i], kmer_cnt[i], skm_store_csr);
+        else
+            skms_stores[i]->add_skms(&skm_store_csr[skmpart_offs[i]], skmpart_offs[i+1]-skmpart_offs[i], skm_cnt[i], kmer_cnt[i], nullptr);
     }
 
     /**
@@ -202,7 +252,7 @@ public:
         u_char *tmp;
         if (skms_store->to_file) {
             skms_store->_add_skms_to_file(skm_data, data_bytes, skm_cnt, kmer_cnt, flush);
-            delete [] skm_data;
+            // delete [] skm_data;
         } else if (data_bytes < buf_size * 0.9) { // TODO: space or time
             tmp = new u_char [data_bytes];
             memcpy(tmp, skm_data, data_bytes);

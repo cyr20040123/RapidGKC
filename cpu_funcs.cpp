@@ -15,6 +15,8 @@
 
 using namespace std;
 
+extern PriorMutex *pm;
+
 const unsigned char basemap[256] = {
     255, 255, 255, 255, 255, 255, 255, 255, // 0..7
     255, 255, 255, 255, 255, 255, 255, 255, // 8..15
@@ -345,6 +347,7 @@ void _inplace_reorder (_out_ T_kmer *kmers, T_skm_partsize n_kmers, int right_sh
 void _reorder (_out_ T_kmer *kmers, T_skm_partsize n_kmers, int right_shift, const T_kmer base_mask, const int NB, size_t *offs) {
     right_shift = right_shift > 0 ? right_shift : 0;
     T_kmer *swap = new T_kmer [n_kmers];//
+    pm->low_check_wait();
     memcpy(swap, kmers, n_kmers * sizeof(T_kmer));
 
     size_t i = 0;
@@ -547,6 +550,7 @@ void extract_kmers_cpu (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* km
         do {
             count = skms_store.skms.try_dequeue_bulk(skm_bulk, 1024);
             for (i=0; i<count; i++) {
+                pm->low_check_wait();
                 memcpy(skms+skm_store_pos, skm_bulk[i].skm_chunk, skm_bulk[i].chunk_bytes);
                 skm_store_pos += skm_bulk[i].chunk_bytes;
             }

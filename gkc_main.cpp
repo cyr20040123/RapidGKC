@@ -207,6 +207,8 @@ atomic<int> debug_cudacp_timing;
 atomic<int> mm_filter_tot_time{0};
 #endif
 
+PriorMutex *pm;
+
 void KmerCounting_TP(CUDAParams &gpars) {
     // GPUReset(gpars.device_id); // must before not after pinned memory allocation
 
@@ -279,6 +281,7 @@ void KmerCounting_TP(CUDAParams &gpars) {
                 "\tCPU threads = "+to_string(PAR.threads_p2 - PAR.max_threads_per_gpu * PAR.n_devices)+" * "+to_string(PAR.threads_cpu_sorter));
     cerr<<endl;
     WallClockTimer wct2;
+    pm = new PriorMutex();
 
     vector<T_kmc> kmc_result[PAR.SKM_partitions];
     int max_streams = min((PAR.SKM_partitions+max(PAR.n_devices, PAR.N_threads)) / max(PAR.n_devices, PAR.N_threads), PAR.n_streams_phase2);

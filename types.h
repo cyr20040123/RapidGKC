@@ -31,11 +31,12 @@ struct ReadPtr {
     T_read_len len;
 };
 
-#ifndef LONGERKMER
-typedef unsigned long long T_kmer;
-#else
+#if defined LONGERKMER
 typedef unsigned __int128 T_kmer;
-// T_kmer TKMAX = 0xffffffffffffffffffffffffffffffff;
+#elif defined SHORTERKMER
+typedef unsigned int T_kmer;
+#else
+typedef unsigned long long T_kmer;
 #endif
 const T_kmer TKMAX = (T_kmer)(-1);
 

@@ -71,20 +71,20 @@ struct canonicalkmer {
             return res < x ? res : x;
         }
 };
-struct replaceidx {
-    replaceidx() {}
-    __host__ __device__
-        T_read_len operator()(const T_read_len& x, const T_read_len& y) const {
-            return x*y;
-        }
-};
-struct is_zero {
-    __host__ __device__
-        bool operator()(const T_read_len x)
-        {
-            return x==0;
-        }
-};
+// struct replaceidx {
+//     replaceidx() {}
+//     __host__ __device__
+//         T_read_len operator()(const T_read_len& x, const T_read_len& y) const {
+//             return x*y;
+//         }
+// };
+// struct is_zero {
+//     __host__ __device__
+//         bool operator()(const T_read_len x)
+//         {
+//             return x==0;
+//         }
+// };
 
 __device__ void _process_bytes (size_t beg, size_t end, u_char* d_skms, T_kmer *d_kmers, unsigned long long *d_kmer_store_pos, T_kvalue k) {
     // if called, stop until at least one skm is processed whatever end is exceeded
@@ -334,6 +334,8 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* d_kmer
 extern atomic<int> debug_cudacp_timing;
 #endif
 
+extern PriorMutex *pm;
+
 __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
                                vector<SKMStoreNoncon*> skms_stores, CUDAParams &gpars,
                                T_kmer_cnt kmer_min_freq, T_kmer_cnt kmer_max_freq,
@@ -358,6 +360,9 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
     vector<thrust::device_vector<T_kmer>> kmers_d_vec(n_streams); // for 0
     vector<size_t> tot_kmers(n_streams);
     string logs = "GPU "+to_string(gpuid)+"\t(T"+to_string(tid)+"):";
+
+    // WallClockTimer wct0;
+
     for (i=0; i<n_streams; i++) {
         CUDA_CHECK(cudaStreamCreate(&streams[i]));
         #ifdef GPU_EXTRACT_TIMING
@@ -382,6 +387,7 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             }
             T_kmer *d_kmers_data = thrust::raw_pointer_cast(kmers_d_vec[i].data());
             // if (GPU_compression) Extract_Kmers_Compressed(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2, gpuid);
+            pm->high_lock();
             #ifdef TIMING_CUDAMEMCPY
             float timing = Extract_Kmers(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2);
             debug_cudacp_timing += (int)timing;
@@ -390,12 +396,17 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             #else
             /*else*/ Extract_Kmers(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2);
             #endif
+            pm->high_unlock();
             tot_kmers[i] = kmers_d_vec[i].size();
         }
         #ifdef GPU_EXTRACT_TIMING
         cudaEventRecord(mid[i], streams[i]);
         #endif
     }
+
+    // cudaStreamSynchronize(streams[0]);
+    // cerr<<"wct0: "<<wct0.stop(true)<<endl;
+    // WallClockTimer wct1;
 
     thrust::constant_iterator<T_kvalue> ik(k);
     vector<thrust::device_vector<bool>> same_flag_d_vec(n_streams); // for 3
@@ -421,6 +432,10 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
             thrust::transform(thrust::device.on(streams[i]), kmers_d_vec[i].begin()+1 /*x beg*/, kmers_d_vec[i].end() /*x end*/, kmers_d_vec[i].begin()/*y beg*/, same_flag_d_vec[i].begin()+1/*res beg*/, sameasprev());
         }
     }
+
+    // cudaStreamSynchronize(streams[0]);
+    // cerr<<"wct1: "<<wct1.stop(true)<<endl;
+    // WallClockTimer wct2;
 
     vector<thrust::device_vector<T_read_len>> idx_d_vec(n_streams); // for 4
     vector<thrust::host_vector<T_kmer>> sorted_kmers_h_vec(n_streams); // for 4+
@@ -455,6 +470,10 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
         #endif
     }
     
+    // cudaStreamSynchronize(streams[0]);
+    // cerr<<"wct2: "<<wct2.stop(true)<<endl;
+    // WallClockTimer wct3;
+
     #ifdef RESULT_VALIDATION
     // validation and export result:
     for (i=0; i<n_streams; i++) {
@@ -504,5 +523,8 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
     +" "+to_string(time_ratio)
     #endif
     , Logger::LV_DEBUG);
+
+    // cerr<<"wct3: "<<wct3.stop(true)<<endl;
+
     return return_value; // total distinct kmer
 }

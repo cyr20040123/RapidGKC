@@ -110,7 +110,7 @@ private:
         char tmp;
         for (std::string &filename: _filenames) {
             FILE *fp = fopen(filename.c_str(), "rb");
-            std::cerr<<"Open file ["<<filename<<"]: "<<fp<<std::endl;
+            // std::cerr<<"Open file ["<<filename<<"]: "<<fp<<std::endl;
             while (true) {
                 DataBuffer t;
                 t.size = fread(buf, 1, _buffer_size, fp);
@@ -126,7 +126,7 @@ private:
             output_wait();
             #endif
             _DBQ.push(t); // push a null block when file ends
-            std::cerr<<"           "<<filename<<"  closed: "<<fclose(fp)<<std::endl;
+            std::cerr<<"          ["<<filename<<"] closed: "<<fclose(fp)<<std::endl;
         }
         _DBQ.finish();
         std::cout<<"Loader finish 1 "/*<<push_cnt*/<<std::endl;
@@ -550,7 +550,7 @@ private:
         std::string filename;
         while (_FNQ->pop(filename)) {
             gzFile fp = gzopen(filename.c_str(), "rb");
-            std::cerr<<"Open gz file ["<<filename<<"]: "<<fp<<std::endl;
+            // std::cerr<<"Open gz file ["<<filename<<"]: "<<fp<<std::endl;
             
             while (true) {
                 DataBuffer t;
@@ -567,7 +567,7 @@ private:
             output_wait();
             #endif
             _DBQ.push(t); // push a null block when file ends
-            std::cerr<<"           "<<filename<<"  closed: "<<gzclose(fp)<<std::endl;
+            std::cerr<<"          ["<<filename<<"] closed: "<<gzclose(fp)<<std::endl;
         }
         _DBQ.finish();
         std::cout<<"Loader finish 1 "/*<<push_cnt*/<<std::endl;

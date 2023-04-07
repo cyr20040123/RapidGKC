@@ -207,6 +207,10 @@ atomic<int> debug_cudacp_timing;
 atomic<int> mm_filter_tot_time{0};
 #endif
 
+#ifdef P2TIMING
+atomic<int> debug_time0{0}, debug_time1{0}, debug_time2{0}, debug_time3{0};
+#endif
+
 // PriorMutex *pm;
 
 void KmerCounting_TP(CUDAParams &gpars) {
@@ -221,9 +225,9 @@ void KmerCounting_TP(CUDAParams &gpars) {
     logger->log("**** Phase 1: Loading and generate superkmers ****", Logger::LV_NOTICE);
     WallClockTimer wct1;
     
-    FileWriter *fw = nullptr;
-    if (PAR.to_file) fw = new FileWriter();
-    for (i=0; i<PAR.SKM_partitions; i++) skm_part_vec.push_back(new SKMStoreNoncon(i, PAR.to_file, fw));// deleted in kmc_counting_GPU
+    // FileWriter *fw = nullptr;
+    // if (PAR.to_file) fw = new FileWriter();
+    for (i=0; i<PAR.SKM_partitions; i++) skm_part_vec.push_back(new SKMStoreNoncon(i, PAR.to_file));// deleted in kmc_counting_GPU
     
     // for (auto readfile:PAR.read_files) {
     //     WallClockTimer wct_tmp;
@@ -248,7 +252,7 @@ void KmerCounting_TP(CUDAParams &gpars) {
             PAR.N_threads, PAR.read_files, PAR.Batch_read_loading, PAR.Buffer_size_MB*PAR.N_threads);
     }
 
-    if (PAR.to_file) fw->finish();
+    // if (PAR.to_file) fw->finish();
 
     size_t skm_tot_cnt = 0, skm_tot_bytes = 0, kmer_tot_cnt = 0;
     for(i=0; i<PAR.SKM_partitions; i++) {
@@ -370,6 +374,9 @@ void KmerCounting_TP(CUDAParams &gpars) {
     
     #ifdef TIMING_CUDAMEMCPY
     cerr<<"debug_cudacp_timing: "<< debug_cudacp_timing <<endl;
+    #endif
+    #ifdef P2TIMING
+    cerr<<"P2 TIME0="<<debug_time0<<" TIME1="<<debug_time1<<" TIME2="<<debug_time2<<" TIME3="<<debug_time3<<endl;
     #endif
     
     logger->log("Phase 2 CPU:GPU = "+to_string(cpu_p2_cnt)+":"+to_string(gpu_p2_cnt), Logger::LV_NOTICE);

@@ -335,6 +335,9 @@ extern atomic<int> debug_cudacp_timing;
 #endif
 
 // extern PriorMutex *pm;
+#ifdef P2TIMING
+extern atomic<int> debug_time0, debug_time1, debug_time2, debug_time3;
+#endif
 
 __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
                                vector<SKMStoreNoncon*> skms_stores, CUDAParams &gpars,
@@ -361,7 +364,9 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
     vector<size_t> tot_kmers(n_streams);
     string logs = "GPU "+to_string(gpuid)+"\t(T"+to_string(tid)+"):";
 
-    // WallClockTimer wct0;
+    #ifdef P2TIMING
+    WallClockTimer wct0;
+    #endif
 
     for (i=0; i<n_streams; i++) {
         CUDA_CHECK(cudaStreamCreate(&streams[i]));
@@ -404,9 +409,12 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
         #endif
     }
 
-    // cudaStreamSynchronize(streams[0]);
+    #ifdef P2TIMING
+    cudaStreamSynchronize(streams[0]);
+    debug_time0 += wct0.stop(true);
     // cerr<<"wct0: "<<wct0.stop(true)<<endl;
-    // WallClockTimer wct1;
+    WallClockTimer wct1;
+    #endif
 
     thrust::constant_iterator<T_kvalue> ik(k);
     vector<thrust::device_vector<bool>> same_flag_d_vec(n_streams); // for 3
@@ -433,9 +441,12 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
         }
     }
 
-    // cudaStreamSynchronize(streams[0]);
+    #ifdef P2TIMING
+    cudaStreamSynchronize(streams[0]);
+    debug_time1 += wct1.stop(true);
     // cerr<<"wct1: "<<wct1.stop(true)<<endl;
-    // WallClockTimer wct2;
+    WallClockTimer wct2;
+    #endif
 
     vector<thrust::device_vector<T_read_len>> idx_d_vec(n_streams); // for 4
     vector<thrust::host_vector<T_kmer>> sorted_kmers_h_vec(n_streams); // for 4+
@@ -470,9 +481,12 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
         #endif
     }
     
-    // cudaStreamSynchronize(streams[0]);
+    #ifdef P2TIMING
+    cudaStreamSynchronize(streams[0]);
     // cerr<<"wct2: "<<wct2.stop(true)<<endl;
-    // WallClockTimer wct3;
+    debug_time2 += wct2.stop(true);
+    WallClockTimer wct3;
+    #endif
 
     #ifdef RESULT_VALIDATION
     // validation and export result:
@@ -524,7 +538,10 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
     #endif
     , Logger::LV_DEBUG);
 
+    #ifdef P2TIMING
     // cerr<<"wct3: "<<wct3.stop(true)<<endl;
+    debug_time3 += wct3.stop(true);
+    #endif
 
     return return_value; // total distinct kmer
 }

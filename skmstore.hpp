@@ -21,48 +21,48 @@ struct SKM {
     u_char* skm_chunk;
 };
 
-struct write_task{
-    u_char* data;
-    size_t size;
-    FILE* fp;
-    u_char* del;
-};
-class FileWriter {
-private:
-    ConcQueue<write_task> _tasks;
-    ConcQueue<u_char*> _delete;
-    std::future<void> _fu;
-    std::future<void> _fudel;
-public:
-    FileWriter() {
-        _fu = std::async([this](){
-            write_task t;
-            while (this->_tasks.pop(t)) {
-                fwrite(t.data, 1, t.size, t.fp);
-                if (t.del != nullptr) this->_delete.push(t.del);
-            }
-            this->_delete.finish();
-        });
-        _fudel = std::async([this](){
-            u_char* t;
-            while(this->_delete.pop(t)) delete t;
-        });
-    }
-    void write(u_char* data, size_t size, FILE* fp, u_char* delete_data = nullptr) {
-        write_task t{data, size, fp, delete_data};
-        _tasks.wait_push(t, 65536);
-    }
-    void finish() {
-        _tasks.finish();
-        _fu.get();
-        _fudel.get();
-    }
-};
+// struct write_task{
+//     u_char* data;
+//     size_t size;
+//     FILE* fp;
+//     u_char* del;
+// };
+// class FileWriter {
+// private:
+//     ConcQueue<write_task> _tasks;
+//     ConcQueue<u_char*> _delete;
+//     std::future<void> _fu;
+//     std::future<void> _fudel;
+// public:
+//     FileWriter() {
+//         _fu = std::async([this](){
+//             write_task t;
+//             while (this->_tasks.pop(t)) {
+//                 fwrite(t.data, 1, t.size, t.fp);
+//                 if (t.del != nullptr) this->_delete.push(t.del);
+//             }
+//             this->_delete.finish();
+//         });
+//         _fudel = std::async([this](){
+//             u_char* t;
+//             while(this->_delete.pop(t)) delete t;
+//         });
+//     }
+//     void write(u_char* data, size_t size, FILE* fp, u_char* delete_data = nullptr) {
+//         write_task t{data, size, fp, delete_data};
+//         _tasks.wait_push(t, 65536);
+//     }
+//     void finish() {
+//         _tasks.finish();
+//         _fu.get();
+//         _fudel.get();
+//     }
+// };
 
 class SKMStoreNoncon {
 public:
     // file
-    FileWriter *fw;
+    // FileWriter *fw;
     bool to_file = false;
     FILE *fp;
     int id = -1;
@@ -126,11 +126,11 @@ public:
         file_closed = true;
     }
 
-    SKMStoreNoncon (int id = -1, bool to_file = false, FileWriter *fw = nullptr) {
+    SKMStoreNoncon (int id = -1, bool to_file = false/*, FileWriter *fw = nullptr*/) {
         this->to_file = to_file;
         this->id = id;
         if (to_file) {
-            this->fw = fw;
+            // this->fw = fw;
             filename = PAR.tmp_file_folder+to_string(id)+".skm";
             fp = fopen(filename.c_str(), "wb");
             #ifdef DEBUG
@@ -141,10 +141,10 @@ public:
     }
     void _add_skms_to_file (u_char* skms_chunk, size_t data_bytes, size_t b_skm_cnt, size_t b_kmer_cnt, bool flush = false) {
         // data_mtx.lock();
-        // // _write_to_file (skms_chunk, data_bytes);
+        _write_to_file (skms_chunk, data_bytes);
         // // if (flush && flush_cnt++ > 8192) {fflush(fp); flush_cnt=0;}
         // data_mtx.unlock();
-        fw->write(skms_chunk, data_bytes, this->fp, skms_chunk);
+        // fw->write(skms_chunk, data_bytes, this->fp, skms_chunk);
         this->tot_size_bytes += data_bytes;
         this->skm_cnt += b_skm_cnt;
         this->kmer_cnt += b_kmer_cnt;
@@ -164,8 +164,8 @@ public:
             #ifndef SKMSTOREV1
             // data_mtx.lock();
             #endif
-            // _write_to_file (skms_chunk, data_bytes);
-            fw->write(skms_chunk, data_bytes, this->fp, delete_data);
+            _write_to_file (skms_chunk, data_bytes);
+            // fw->write(skms_chunk, data_bytes, this->fp, delete_data);
             #ifndef SKMSTOREV1
             // data_mtx.unlock();
             #endif

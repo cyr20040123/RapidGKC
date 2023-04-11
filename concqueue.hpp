@@ -90,14 +90,14 @@ public:
         _size = _Q.size();
         return true;
     }
-    bool consumer_finish_check () { // return if producer finished and all items are poped
-        if (!_finished) return false;
-        else {
-            std::lock_guard<std::mutex> lg(_mtx);
-            _size = _Q.size();
-            return _finished && _size == 0;
-        }
-    }
+    // bool consumer_finish_check () { // return if producer finished and all items are poped
+    //     if (!_finished) return false;
+    //     else {
+    //         std::lock_guard<std::mutex> lg(_mtx);
+    //         _size = _Q.size();
+    //         return _finished && _size == 0;
+    //     }
+    // }
     size_t size_est () { // return the estimated size of queue without lock
         return _size;
     }

@@ -79,7 +79,8 @@
         "variant": "cpp",
         "*.ipp": "cpp",
         "__nullptr": "cpp",
-        "__functional_03": "cpp"
+        "__functional_03": "cpp",
+        "__config": "cpp"
     },
     "C_Cpp.default.includePath": [
         "/usr/local/cuda-11.8/include/"

@@ -298,8 +298,11 @@ private:
                     start_from_buffer = true;
                     last_line_buffer = std::string(i->ptr, -(i->len));
                     i++; continue;
+                } else {
+                    i++; continue;
                 }
                 if (read.len >= _min_read_len) batch_reads.push_back(read);
+                else delete read.read;
                 if (batch_reads.size() >= _read_batch_size) {
                     _RBQ.wait_push(batch_reads, _n_threads_consumer + 1);
                     batch_reads = std::vector<ReadPtr>();
@@ -649,8 +652,11 @@ private:
                     start_from_buffer = true;
                     last_line_buffer = std::string(i->ptr, -(i->len));
                     i++; continue;
+                } else {
+                    i++; continue;
                 }
                 if (read.len >= _min_read_len) batch_reads.push_back(read);
+                else delete read.read;
                 if (batch_reads.size() >= _read_batch_size) {
                     _RBQ->wait_push(batch_reads, _n_threads_consumer + 1);
                     batch_reads = std::vector<ReadPtr>();
@@ -662,9 +668,11 @@ private:
         }
         if (start_from_buffer) {
             read.len = last_line_buffer.length();
-            read.read = new char[read.len];
-            memcpy(read.read, last_line_buffer.c_str(), read.len);
-            batch_reads.push_back(read);
+            if (read.len >= _min_read_len) {
+                read.read = new char[read.len];
+                memcpy(read.read, last_line_buffer.c_str(), read.len);
+                batch_reads.push_back(read);
+            }
         }
         if (batch_reads.size()) _RBQ->push(batch_reads); // add last batch of reads
         if (_RBQ_FINISH_CNT->fetch_sub(1) == 1) _RBQ->finish();

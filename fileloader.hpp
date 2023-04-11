@@ -15,6 +15,10 @@
 
 #include "zlib.h"
 
+#ifdef DEBUG
+#include "utilities.hpp"
+#endif
+
 #ifdef USEMMAP
 #include <fcntl.h>      // open
 #include <sys/mman.h>   // mmap
@@ -317,9 +321,11 @@ private:
         }
         if (start_from_buffer) {
             read.len = last_line_buffer.length();
-            read.read = new char[read.len];
-            memcpy(read.read, last_line_buffer.c_str(), read.len);
-            batch_reads.push_back(read);
+            if (read.len >= _min_read_len) {
+                read.read = new char[read.len];
+                memcpy(read.read, last_line_buffer.c_str(), read.len);
+                batch_reads.push_back(read);
+            }
         }
         if (batch_reads.size()) _RBQ.push(batch_reads); // add last batch of reads
         #ifdef STEP3P
@@ -445,6 +451,17 @@ public:
             if (t.joinable()) t.join();
     }
     #ifdef DEBUG
+    void ss() {
+        WallClockTimer wct0;
+        _STEP1_load_from_file();
+        std::cerr<<wct0.stop(true)<<std::endl;
+        WallClockTimer wct1;
+        _STEP2_find_newline();
+        std::cerr<<wct1.stop(true)<<std::endl;
+        WallClockTimer wct2;
+        _STEP3_extract_read();
+        std::cerr<<wct2.stop(true)<<std::endl;
+    }
     void debug_load_reads_with_worker (std::function<void(std::vector<ReadPtr>&, int)> work_func) {
         std::thread t1(&ReadLoader::_STEP1_load_from_file, this);
         std::thread t2(&ReadLoader::_STEP2_find_newline, this);

@@ -16,6 +16,7 @@
 // for thread affinity
 #include <pthread.h>
 #include <sched.h>
+#include <cassert>
 
 struct ThreadAffinity {
     int avail_logical_cores_beg = 0;

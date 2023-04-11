@@ -320,7 +320,7 @@ void KmerCounting_TP(CUDAParams &gpars) {
     SKMStoreNoncon *tmp_part;
     int j;
     vector<int> toolarge_bins;
-    if (PAR.n_devices == 0) gpars.vram.push_back(1048576*32768);
+    if (PAR.n_devices == 0) gpars.vram.push_back((size_t)1048576*(size_t)32768);
     for (i=0; i<PAR.SKM_partitions; i=j) {
         long long vram_avail = gpars.vram[0] / max(1, min(PAR.threads_p2, PAR.max_threads_per_gpu/2));
         vector<SKMStoreNoncon*> store_vec;

@@ -512,7 +512,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
     float time_filter=0, time_filter_stream;
     #endif
 
-    int gpuid = (gpars.device_id++) % gpars.n_devices;
+    int gpuid = gpars.device_id.fetch_add(1) % gpars.n_devices;
     CUDA_CHECK(cudaSetDevice(gpuid));
     // V2:
     // if (gpars.gpuid_thread[tid] == -1) {

@@ -215,7 +215,7 @@ public:
     int threads_p2 = 2;
     bool CPU_only = false;
     bool GPU_only = false;
-    bool check_VRAM = false;
+    // bool check_VRAM = false;
 
     // bool GPU_compression = false;
 
@@ -247,7 +247,7 @@ public:
             else if (!strcmp(argvs[i], "-rps")) reads_per_stream_mul = atoi(argvs[++i]); // if short reads, set it to 2 or 4 to fully utilize gpu
             else if (!strcmp(argvs[i], "-cpuonly")) CPU_only = true;
             else if (!strcmp(argvs[i], "-gpuonly")) GPU_only = true;
-            else if (!strcmp(argvs[i], "-checkvram")) check_VRAM = true;
+            // else if (!strcmp(argvs[i], "-checkvram")) check_VRAM = true;
             else if (!strcmp(argvs[i], "-log")) log_file_folder = std::string(argvs[++i]);
             else if (!strcmp(argvs[i], "-lv")) log_lv = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-read")) {
@@ -274,6 +274,16 @@ public:
         assert (!(GPU_only && !n_devices));
         assert (!(GPU_only && CPU_only));
         assert (sizeof(size_t) == sizeof(unsigned long long));
+        #ifdef SHORTERKMER
+        assert (K_kmer<=16);
+        #else
+            #ifdef LONGERKMER
+            assert (K_kmer<=64);
+            #else
+            assert (K_kmer<=32);
+            #endif
+        #endif
+        
     }
 } PAR;
 // ** Implementation **

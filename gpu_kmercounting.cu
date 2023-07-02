@@ -40,6 +40,7 @@ if (cuerr.cu_err != CUDA_SUCCESS) { \
 // #include <thrust/scan.h>
 #include <thrust/remove.h>
 #include <thrust/execution_policy.h>
+#include <thrust/iterator/constant_iterator.h> // Required by CUDA12+
 
 // #include "types.h"
 // #include "skmstore.hpp"
@@ -243,11 +244,11 @@ __global__ void GPU_Extract_Kmers_test (u_char* d_skms, size_t tot_bytes, T_kmer
 }
 #endif
 
-__host__ u_char* load_SKM_from_file (SKMStoreNoncon &skms_store) {
+__host__ u_char* load_SKM_from_file (SKMStoreNoncon &skms_store, cudaStream_t &stream) {
     u_char* d_skms;
-    CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes));
+    CUDA_CHECK(cudaMallocAsync((void**) &(d_skms), skms_store.tot_size_bytes, stream));
     skms_store.load_from_file();
-    CUDA_CHECK(cudaMemcpy(d_skms, skms_store.skms_from_file, skms_store.tot_size_bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpyAsync(d_skms, skms_store.skms_from_file, skms_store.tot_size_bytes, cudaMemcpyHostToDevice, stream));
     delete skms_store.skms_from_file;
     return d_skms;
 }
@@ -272,7 +273,7 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* d_kmer
     CUDA_CHECK(cudaMemsetAsync(d_kmer_store_pos, 0, sizeof(unsigned long long), stream));
 
     // ---- copy skm chunks H2D ----
-    if (skms_store.to_file) d_skms = load_SKM_from_file(skms_store);
+    if (skms_store.to_file) d_skms = load_SKM_from_file(skms_store, stream);
     else {
         CUDA_MALLOC_CHECK(cudaMallocAsync((void**) &(d_skms), skms_store.tot_size_bytes+1, stream));
         // CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes+1));

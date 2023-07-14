@@ -3,6 +3,8 @@
 #ifndef _UTILITIES_HPP
 #define _UTILITIES_HPP
 
+#define MB1 (1048576)
+
 #include "types.h"
 #include <atomic>
 #include <chrono>
@@ -24,23 +26,47 @@ using namespace std::chrono_literals;
 class WallClockTimer {  // evaluating wall clock time
 private:
     std::chrono::_V2::system_clock::time_point start;
+    std::chrono::_V2::system_clock::time_point last;
     std::chrono::_V2::system_clock::time_point end;
 public:
     // Initialize a wall-clock timer and start.
     WallClockTimer() {
-        start = std::chrono::high_resolution_clock::now();
+        last = start = std::chrono::high_resolution_clock::now();
     }
-    // Return end-start duration in sec from init or restart till now.
+    /// @brief Return the time interval from start, stop and save the ending time.
+    /// @param millisecond
+    /// @return The time interval from start in millisecond (if set true) or second.
     double stop(bool millisecond = false) {
         end = std::chrono::high_resolution_clock::now();
         if (millisecond) return std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
         else return std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.0;
     }
+    /// @brief Return the time interval from start.
+    /// @param millisecond 
+    /// @return The time interval from start in second or millisecond (if set true).
+    double elapsed(bool millisecond = false) {
+        std::chrono::_V2::system_clock::time_point now = std::chrono::high_resolution_clock::now();
+        if (millisecond) return std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
+        else return std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count() / 1000.0;
+    }
+    /// @brief Return the time interval from last breakpoint.
+    /// @param millisecond 
+    /// @return The time interval from last breakpoint in second or millisecond (if set true).
+    double breakpoint(bool millisecond = false) {
+        std::chrono::_V2::system_clock::time_point now = std::chrono::high_resolution_clock::now();
+        int64_t res = std::chrono::duration_cast<std::chrono::milliseconds>(now - last).count();
+        last = now;
+        if (millisecond) return res;
+        else return res / 1000.0;
+    }
+    /// @brief Return the time interval from start to end (called by stop).
+    /// @param millisecond 
+    /// @return The time interval from start to end in second or millisecond (if set true).
     double get(bool millisecond = false) {
         if (millisecond) return std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
         else return std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.0;
     }
-    // Restart the clock start time.
+    /// @brief Restart the timer.
     void restart() {
         start = std::chrono::high_resolution_clock::now();
     }
@@ -78,8 +104,8 @@ class Logger { // for CLI logging and file logging
 public:
     enum LogLevel {LV_FATAL, LV_ERROR, LV_NOTICE, LV_WARNING, LV_INFO, LV_DEBUG};
     std::string loglabel[6] = {"[FATAL]", "[ERROR]", "[NOTICE]", "[WARNING]", "[INFO]", "[DEBUG]"};
-private:
     LogLevel log_lv = LV_WARNING; // output level only equal or smaller than this value
+private:
     bool to_file = false;
     int my_rank = 0;
     std::ofstream flog;
@@ -182,19 +208,19 @@ public:
 // ====================================================
 // ================ CLASS GlobalParams ================
 // ====================================================
-static class GlobalParams {
+extern class GlobalParams {
 public:
     T_kvalue K_kmer = 21;   // length of kmer
     T_kvalue P_minimizer = 7;
     int SKM_partitions = 31; // minimizer length and superkmer partitions
-    T_kmer_cnt kmer_min_freq = 1, kmer_max_freq = 1000; // count kmer cnt in [min,max] included
+    T_kmer_cnt kmer_min_freq = 0, kmer_max_freq = 2147483647; // count kmer cnt in [min,max] included
     bool HPC = false;           // homopolymer compression assembly
     // int Kmer_filter = 25;       // percentage
-    int N_threads = 4;          // threads per process
     // string tmp_file_folder = "./tmp/";
-    std::string tmp_file_folder = "/home/cyr/tmp/";
+    std::string tmp_file_folder = "~/tmp/";
     bool to_file = true;
     std::string log_file_folder = "./log/";
+    std::string output_file_prefix = ""; //"./output/part_";
     int log_lv = 5;
     std::vector<std::string> read_files;
     
@@ -206,13 +232,18 @@ public:
     int block_size = 256;
     int grid_size2 = 16;
     int block_size2 = 512;
-    int threads_cpu_sorter = 1;
+    int reads_per_stream_mul = 1;
+    
     int n_devices = 1;
     int n_streams = 6;
-    int n_streams_phase2 = 2;
-    int reads_per_stream_mul = 1;
-    int max_threads_per_gpu = 2;
-    int threads_p2 = 2;
+    int n_streams_p2 = 2;
+    
+    int N_threads = 4;              // -t
+    int max_threads_per_gpu = 1;    // -tgpu
+    int max_threads_per_gpu_p2 = 1; // -tgpu2
+    int threads_p2 = 4;             // -t2
+    int threads_cpu_sorter = 1;     // 1 threads for 1 CPU sorting worker
+    
     bool CPU_only = false;
     bool GPU_only = false;
     // bool check_VRAM = false;
@@ -224,9 +255,10 @@ public:
         for (int i=1; i<argc-1; i++) {
             if (!strcmp(argvs[i], "-t")) N_threads = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-tgpu")) max_threads_per_gpu = atoi(argvs[++i]);
+            else if (!strcmp(argvs[i], "-tgpu2")) max_threads_per_gpu_p2 = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-t2")) threads_p2 = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-tgz")) threads_gz = atoi(argvs[++i]);
-            else if (!strcmp(argvs[i], "-tsort")) threads_cpu_sorter = atoi(argvs[++i]);
+            else if (!strcmp(argvs[i], "-sort")) threads_cpu_sorter = atoi(argvs[++i]);
             // else if (!strcmp(argvs[i], "-rdt")) RD_threads_min = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-k")) K_kmer = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-p")) P_minimizer = atoi(argvs[++i]);
@@ -243,7 +275,7 @@ public:
             else if (!strcmp(argvs[i], "-block2")) block_size2 = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-ngpu")) n_devices = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-ns1")) n_streams = atoi(argvs[++i]);
-            else if (!strcmp(argvs[i], "-ns2")) n_streams_phase2 = atoi(argvs[++i]);
+            else if (!strcmp(argvs[i], "-ns2")) n_streams_p2 = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-rps")) reads_per_stream_mul = atoi(argvs[++i]); // if short reads, set it to 2 or 4 to fully utilize gpu
             else if (!strcmp(argvs[i], "-cpuonly")) CPU_only = true;
             else if (!strcmp(argvs[i], "-gpuonly")) GPU_only = true;
@@ -273,6 +305,8 @@ public:
             log_file_folder.push_back('/');
         assert (!(GPU_only && !n_devices));
         assert (!(GPU_only && CPU_only));
+        assert (max_threads_per_gpu);
+        assert (n_streams_p2);
         assert (sizeof(size_t) == sizeof(unsigned long long));
         #ifdef SHORTERKMER
         assert (K_kmer<=16);
@@ -297,15 +331,14 @@ struct CUDAParams {
     int BpG1, TpB1;
     int BpG2, TpB2; // for step 2
     int n_streams, items_stream_mul;
-    int n_streams_phase2;
+    int n_streams_p2;
     int n_devices;
     std::atomic<int> device_id;
     std::vector<size_t> vram;
-    std::vector<size_t> vram_used;
-    std::vector<std::mutex*> vram_mtx;
-    // std::atomic<int> gpuworker_threads;
-    // std::vector<std::atomic<int>*> running_threads_of_gpu;
+    // std::vector<size_t> vram_used;
+    // std::vector<std::mutex*> vram_mtx;
     int max_threads_per_gpu;
+    int max_threads_per_gpu_p2;
 };
 
 // ================ Read Sorting ================

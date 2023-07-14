@@ -11,6 +11,7 @@
 // #include "nvcomp/gdeflate.hpp"
 // #include "nvcomp.hpp"
 #include "minimizer_filter.h"
+#include "cuda_utils.cuh"
 
 #include <vector>
 #include <string>
@@ -145,7 +146,7 @@ extern Logger *logger;
 __global__ void GPU_HPCEncoding (
     _in_ T_read_cnt d_reads_cnt, _out_ T_read_len *d_read_len, 
     _in_ _out_ unsigned char *d_reads, _in_ T_CSR_cap *d_read_offs, 
-    bool HPC, _out_ T_read_len *d_hpc_orig_pos = nullptr) {
+    bool HPC/*, _out_ T_read_len *d_hpc_orig_pos = nullptr*/) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     int n_t = blockDim.x * gridDim.x;
     if (!HPC) { // only calculate read_len in global memory (optional but essential for HPC=true)
@@ -159,12 +160,12 @@ __global__ void GPU_HPCEncoding (
     for (T_read_cnt rid = tid; rid < d_reads_cnt; rid += n_t) {
         T_read_len read_len = d_read_offs[rid+1] - d_read_offs[rid];
         T_read_len last_idx = 0, hpc_arr_idx = d_read_offs[tid], j;
-        d_hpc_orig_pos[hpc_arr_idx] = 0;
+        // d_hpc_orig_pos[hpc_arr_idx] = 0;
         for (T_read_len i = 1; i < read_len; i++) {
             j = i + d_read_offs[rid];
             last_idx += (i-last_idx) * (d_reads[j] != d_reads[j-1]);
             hpc_arr_idx += (d_reads[j] != d_reads[j-1]);
-            d_hpc_orig_pos[hpc_arr_idx] = last_idx;
+            // d_hpc_orig_pos[hpc_arr_idx] = last_idx;
             d_reads[hpc_arr_idx] = d_reads[j];
         }
         d_read_len[rid] = hpc_arr_idx + 1 - d_read_offs[rid];
@@ -288,7 +289,7 @@ __global__ void GPU_GenSKMOffs(
     _in_ T_read_cnt d_reads_cnt, _in_ T_read_len *d_read_len, 
     _in_ T_CSR_cap *d_read_offs, 
     _in_ T_minimizer *d_minimizers,
-    _out_ T_read_len *d_superkmer_offs,
+    _out_ T_read_len *d_skm_offs,
     _out_ T_skm_partsize *d_skm_part_bytes,
     _out_ T_skm_partsize *d_skm_cnt,
     _out_ T_skm_partsize *d_kmer_cnt,
@@ -319,7 +320,7 @@ __global__ void GPU_GenSKMOffs(
     for (T_read_cnt rid = tid; rid < d_reads_cnt; rid += n_t) {
         T_read_len len = d_read_len[rid];                               // current read length
         T_minimizer *minimizers = &(d_minimizers[d_read_offs[rid]]);    // minimizer list pointer
-        T_read_len *skm = &d_superkmer_offs[d_read_offs[rid]];          // superkmer list pointer
+        T_read_len *skm = &d_skm_offs[d_read_offs[rid]];          // superkmer list pointer
         T_read_len last_skm_pos = 0, skm_count = 0;                     // position of the last minimizer; superkmer count
         skm[0] = 0;
         for (i = 1; i <= len-K_kmer; i++) {
@@ -430,7 +431,7 @@ __global__ void GPU_ExtractSKM (
     _in_ T_read_cnt d_reads_cnt, _in_ T_read_len *d_read_len, _in_ T_CSR_cap *d_read_offs, _in_ unsigned char *d_reads,
     _in_ T_minimizer *d_minimizers,
     _in_ T_read_len *d_skm_offs_inread,
-    _in_ T_skm_partsize *d_store_pos, /*_in_ T_skm_partsize *d_skm_cnt, */_out_ u_char *d_skm_store_csr, _in_ T_CSR_cap *d_skmpart_offs, 
+    _in_ T_skm_partsize *d_store_pos, /*_in_ T_skm_partsize *d_skm_cnt, */_out_ u_char *d_skm_store_csr, _in_ T_skm_partsize *d_skmpart_offs, 
     const T_kvalue K_kmer, const T_kvalue P_minimizer, const int SKM_partitions
 ) {
     T_read_len *cur_read_skm_offs;      // skm offs pointer of current read
@@ -500,11 +501,16 @@ __host__ size_t GPUReset(int did) {
 extern atomic<int> mm_filter_tot_time;
 #endif
 
+thread_local vector<MyDevicePtr> vec_d_mmskmreads(PAR.n_streams);   // 9S+8 = 4S (d_minimizers), 4S (d_skm_offs), S+8 (d_reads)
+thread_local vector<MyDevicePtr> vec_d_rlenroffs(PAR.n_streams);    // 12N+8 = 4N (d_read_len), 8N+8 (d_read_offs)
+thread_local vector<MyDevicePtr> vec_d_partinfo(PAR.n_streams);     // 40P+8 = 8P (d_skm_part_bytes), 8P (d_skm_cnt), 8P (d_kmer_cnt), 8P (d_store_pos), 8P+8 (d_skmpart_offs)
+thread_local vector<MyDevicePtr> vec_d_skmpart(PAR.n_streams);      // X (d_skm_store_csr)
+
 // provide pinned_reads from the shortest to the longest read
 __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
-    const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars, CountTask task,
+    const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars,
     const int SKM_partitions, vector<SKMStoreNoncon*> skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
-    int tid
+    int tid, int gpuid
     /*atomic<size_t> skm_part_sizes[]*/) {
     
     #ifdef MMFILTER_TIMING
@@ -512,15 +518,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
     float time_filter=0, time_filter_stream;
     #endif
 
-    int gpuid = gpars.device_id.fetch_add(1) % gpars.n_devices;
     CUDA_CHECK(cudaSetDevice(gpuid));
-    // V2:
-    // if (gpars.gpuid_thread[tid] == -1) {
-    //     CUDA_CHECK(cudaSetDevice(tid%gpars.n_devices));
-    //     gpars.gpuid_thread[tid] = tid%gpars.n_devices;
-    // }
-    // int gpuid = gpars.gpuid_thread[tid];
-    // CUDA_CHECK(cudaDeviceSynchronize());
     
     cudaStream_t streams[gpars.n_streams];
     T_d_data gpu_data[gpars.n_streams];
@@ -532,46 +530,75 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
     for (i=0; i<gpars.n_streams; i++)
         CUDA_CHECK(cudaStreamCreate(&streams[i]));
     
-    T_read_cnt items_per_stream = gpars.BpG1 * gpars.TpB1 * gpars.items_stream_mul;
+    T_read_cnt reads_per_stream = gpars.BpG1 * gpars.TpB1 * gpars.items_stream_mul;
     T_read_cnt cur_read = 0, end_read;
-    i = 0; // i for which stream
     string logs = "   GPU "+to_string(gpuid)+":";
+
+    int size_S[gpars.n_streams], size_N[gpars.n_streams], size_P[gpars.n_streams]; //, size_X[gpars.n_streams];
+    
     while (cur_read < pinned_reads.n_reads) {
 
-        for (i = 0; i < gpars.n_streams && cur_read < pinned_reads.n_reads; i++, cur_read += items_per_stream) {
+        for (i = 0; i < gpars.n_streams && cur_read < pinned_reads.n_reads; i++, cur_read += reads_per_stream) {
             // i: which stream
 
             bat_beg_read[i] = cur_read;
-            end_read = min(cur_read + items_per_stream, pinned_reads.n_reads); // the last read in this stream batch
+            end_read = min(cur_read + reads_per_stream, pinned_reads.n_reads); // the last read in this stream batch
             host_data[i].reads_cnt = gpu_data[i].reads_cnt = end_read-cur_read;
             batch_size[i] = pinned_reads.reads_offs[end_read] - pinned_reads.reads_offs[cur_read]; // read size in bytes
             // logger->log("GPU "+to_string(gpuid)+" Stream "+to_string(i)+":\tread count = "+to_string(gpu_data[i].reads_cnt));
             logs += "\tS "+to_string(i)+"  #Reads "+to_string(gpu_data[i].reads_cnt);
 
-            CUDA_CHECK(cudaStreamSynchronize(streams[i]));
+            size_S[i] = batch_size[i];
+            size_N[i] = gpu_data[i].reads_cnt;
+            size_P[i] = SKM_partitions;
+
             // ---- cudaMalloc ----
-            // reads (data, offs, len, hpc), minmers, skms (offs, part_byte, cnt)
-            // ~ 5000 reads / GB
-            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_reads), sizeof(u_char) * (batch_size[i]+8), streams[i]));// +8 for uchar4 access overflow // 8192 threads(reads) * 20 KB/read     = 160MB VRAM
-            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_read_offs), sizeof(T_CSR_cap) * (gpu_data[i].reads_cnt+1), streams[i]));    // 8192 threads(reads) * 8 B/read       =  64MB VRAM
-            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_read_len), sizeof(T_read_len) * (gpu_data[i].reads_cnt), streams[i]));      // 8192 threads(reads) * 4 B/read       =  32MB VRAM
-            if (HPC) {// cost a lot VRAM
-                CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_hpc_orig_pos), sizeof(T_read_len) * (batch_size[i]), streams[i]));      // 8192 threads(reads) * 20K * 4B/read  = 640MB VRAM
-            } else {
-                gpu_data[i].d_hpc_orig_pos = nullptr;
-            }
-            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_minimizers), sizeof(T_minimizer) * (batch_size[i]), streams[i]));           // 8192 threads(reads) * 20K * 4B/read  = 640MB VRAM
-            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_superkmer_offs), sizeof(T_read_len) * (batch_size[i]), streams[i]));        // 8192 threads(reads) * 20K * 4B/read  = 640MB VRAM
-            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skm_part_bytes), sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
+            vec_d_mmskmreads[i] .use((sizeof(u_char) + sizeof(T_minimizer) + sizeof(T_read_len)) * size_S[i] + 8 * sizeof(u_char), streams[i], true);
+            vec_d_rlenroffs[i]  .use((sizeof(T_read_len) + sizeof(T_CSR_cap))*size_N[i] + sizeof(T_CSR_cap), streams[i]);
+            vec_d_partinfo[i]   .use((sizeof(T_skm_partsize) * 5) * size_P[i] + sizeof(T_skm_partsize), streams[i]);
+        }
+        started_streams = i;
+
+        for (i = 0; i < started_streams; i++) {
+            CUDA_CHECK(cudaStreamSynchronize(streams[i])); // wait for cudamalloc
+            
+            // // reads (data, offs, len, hpc), minmers, skms (offs, part_byte, cnt) // ~ 5000 reads / GB
+            // CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_reads), sizeof(u_char) * (batch_size[i]+8), streams[i]));// +8 for uchar4 access overflow // 8192 threads(reads) * 20 KB/read     = 160MB VRAM
+            // CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_read_offs), sizeof(T_CSR_cap) * (gpu_data[i].reads_cnt+1), streams[i]));    // 8192 threads(reads) * 8 B/read       =  64MB VRAM
+            // CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_read_len), sizeof(T_read_len) * (gpu_data[i].reads_cnt), streams[i]));      // 8192 threads(reads) * 4 B/read       =  32MB VRAM
+            // CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_minimizers), sizeof(T_minimizer) * (batch_size[i]), streams[i]));           // 8192 threads(reads) * 20K * 4B/read  = 640MB VRAM
+            // CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skm_offs), sizeof(T_read_len) * (batch_size[i]), streams[i]));        // 8192 threads(reads) * 20K * 4B/read  = 640MB VRAM
+            // CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skm_part_bytes), sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
+            // CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skm_cnt), sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
+            // CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_kmer_cnt), sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
+            // CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_store_pos), sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
+            // CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skmpart_offs), sizeof(T_CSR_cap) * (SKM_partitions+1), streams[i]));
+
+            gpu_data[i].d_minimizers= reinterpret_cast<T_minimizer*>    (vec_d_mmskmreads[i].get());
+            gpu_data[i].d_skm_offs  = reinterpret_cast<T_read_len*>     (vec_d_mmskmreads[i].get(sizeof(T_minimizer)*size_S[i]));
+            gpu_data[i].d_reads     = reinterpret_cast<unsigned char*>  (vec_d_mmskmreads[i].get((sizeof(T_minimizer)+sizeof(T_read_len))*size_S[i]));
+            
+            gpu_data[i].d_read_offs = reinterpret_cast<T_CSR_cap*>  (vec_d_rlenroffs[i].get(4*size_N[i]));
+            gpu_data[i].d_read_len  = reinterpret_cast<T_read_len*> (vec_d_rlenroffs[i].get());
+            
+            gpu_data[i].d_skm_part_bytes= reinterpret_cast<T_skm_partsize*> (vec_d_partinfo[i].get());
+            gpu_data[i].d_skm_cnt       = reinterpret_cast<T_skm_partsize*> (vec_d_partinfo[i].get(sizeof(T_skm_partsize)*size_P[i]));
+            gpu_data[i].d_kmer_cnt      = reinterpret_cast<T_skm_partsize*> (vec_d_partinfo[i].get(sizeof(T_skm_partsize)*2*size_P[i]));
+            gpu_data[i].d_store_pos     = reinterpret_cast<T_skm_partsize*> (vec_d_partinfo[i].get(sizeof(T_skm_partsize)*3*size_P[i]));
+            gpu_data[i].d_skmpart_offs  = reinterpret_cast<T_skm_partsize*> (vec_d_partinfo[i].get(sizeof(T_skm_partsize)*4*size_P[i]));
+
+            // if (HPC) {// cost a lot VRAM
+            //     CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_hpc_orig_pos), sizeof(T_read_len) * (batch_size[i]), streams[i]));      // 8192 threads(reads) * 20K * 4B/read  = 640MB VRAM
+            // } else {
+            //     gpu_data[i].d_hpc_orig_pos = nullptr;
+            // }
             CUDA_CHECK(cudaMemsetAsync(gpu_data[i].d_skm_part_bytes, 0, sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
-            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skm_cnt), sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
-            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_kmer_cnt), sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
             CUDA_CHECK(cudaMemsetAsync(gpu_data[i].d_skm_cnt, 0, sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
             CUDA_CHECK(cudaMemsetAsync(gpu_data[i].d_kmer_cnt, 0, sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
             
             // ---- copy raw reads to device ----
-            CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_reads, &(pinned_reads.reads_CSR[pinned_reads.reads_offs[cur_read]]), batch_size[i], cudaMemcpyHostToDevice, streams[i]));
-            CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_read_offs, &(pinned_reads.reads_offs[cur_read]), sizeof(T_CSR_cap) * (gpu_data[i].reads_cnt+1), cudaMemcpyHostToDevice, streams[i]));
+            CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_reads, &(pinned_reads.reads_CSR[pinned_reads.reads_offs[bat_beg_read[i]]]), batch_size[i], cudaMemcpyHostToDevice, streams[i]));
+            CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_read_offs, &(pinned_reads.reads_offs[bat_beg_read[i]]), sizeof(T_CSR_cap) * (gpu_data[i].reads_cnt+1), cudaMemcpyHostToDevice, streams[i]));
             
             // ---- GPU gen skm ----
             MoveOffset<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>>(
@@ -581,7 +608,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             GPU_HPCEncoding<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>>(
                 gpu_data[i].reads_cnt,  gpu_data[i].d_read_len, 
                 gpu_data[i].d_reads,    gpu_data[i].d_read_offs, 
-                HPC,                    gpu_data[i].d_hpc_orig_pos
+                HPC//,                    gpu_data[i].d_hpc_orig_pos
             );
             #ifdef MMFILTER_TIMING
             cudaEventCreate(&start[i]); cudaEventCreate(&stop[i]);
@@ -600,7 +627,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             GPU_GenSKMOffs<<<gpars.BpG1, gpars.TpB1, 2*SKM_partitions*sizeof(unsigned int), streams[i]>>>(
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_len, gpu_data[i].d_read_offs, 
                 gpu_data[i].d_minimizers,
-                gpu_data[i].d_superkmer_offs,
+                gpu_data[i].d_skm_offs,
                 gpu_data[i].d_skm_part_bytes,
                 gpu_data[i].d_skm_cnt,
                 gpu_data[i].d_kmer_cnt,
@@ -621,14 +648,13 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].kmer_cnt,        gpu_data[i].d_kmer_cnt,          sizeof(T_skm_partsize) * SKM_partitions, cudaMemcpyDeviceToHost, streams[i]));
             
             // ---- cudaMalloc skm store positions ----
-            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_store_pos), sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
+            
             CUDA_CHECK(cudaMemsetAsync(gpu_data[i].d_store_pos, 0, sizeof(T_skm_partsize) * SKM_partitions, streams[i]));
         }
-        started_streams = i;
+        // started_streams = i;
 
         // ==== Calc SKM Partition Sizes and Extract SKMs ====
         for (i = 0; i < started_streams; i++) {
-            
             CUDA_CHECK(cudaStreamSynchronize(streams[i])); // for host skm_part_bytes and skm_cnt
             #ifdef MMFILTER_TIMING
             cudaEventElapsedTime(&time_filter_stream, start[i], stop[i]);
@@ -645,61 +671,63 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 host_data[i].tot_skm_bytes += host_data[i].skm_part_bytes[j];
             }
             // ---- cudaMalloc skm store ----
-            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skm_store_csr), host_data[i].tot_skm_bytes, streams[i]));
+            vec_d_skmpart[i].use(host_data[i].tot_skm_bytes, true);
+        }
+        for (i = 0; i < started_streams; i++) {
+            CUDA_CHECK(cudaStreamSynchronize(streams[i])); // for vec_d_skmpart[i].use
+            gpu_data[i].d_skm_store_csr = (u_char*)vec_d_skmpart[i].get();
             // ---- memcpy skm part sizes and offsets to gpu ----
-            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skmpart_offs), sizeof(T_CSR_cap) * (SKM_partitions+1), streams[i]));
+            // CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skm_store_csr), host_data[i].tot_skm_bytes, streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_skmpart_offs, host_data[i].skmpart_offs, sizeof(T_CSR_cap) * (SKM_partitions+1), cudaMemcpyHostToDevice, streams[i]));
 
             // ---- GPU extract skms ----
             GPU_ExtractSKM<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>> (
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_len, gpu_data[i].d_read_offs, gpu_data[i].d_reads,
-                gpu_data[i].d_minimizers, gpu_data[i].d_superkmer_offs, 
+                gpu_data[i].d_minimizers, gpu_data[i].d_skm_offs, 
                 gpu_data[i].d_store_pos, /*gpu_data[i].d_skm_cnt, */gpu_data[i].d_skm_store_csr, gpu_data[i].d_skmpart_offs,
                 K_kmer, P_minimizer, SKM_partitions
             );
             // -- Malloc on host for SKM storage --
             host_data[i].skm_store_csr = new u_char[host_data[i].tot_skm_bytes];//
-        }
+            
 
-        // ==== Copy SKMs Back to CPU ====
-        for (i = 0; i < started_streams; i++) {
             // -- Non-compressed SKM collection (D2H) -- 
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].skm_store_csr, gpu_data[i].d_skm_store_csr, host_data[i].tot_skm_bytes, cudaMemcpyDeviceToHost, streams[i]));
             
             // TO-DO: add if on task to indicate whether to new and D2H
             if (HPC) {
-                host_data[i].hpc_orig_pos = new T_read_len[batch_size[i]];//
+                // host_data[i].hpc_orig_pos = new T_read_len[batch_size[i]];//
                 host_data[i].read_len = new T_read_len[gpu_data[i].reads_cnt];//
-                CUDA_CHECK(cudaMemcpyAsync(host_data[i].hpc_orig_pos, gpu_data[i].d_hpc_orig_pos, sizeof(T_read_len) * batch_size[i], cudaMemcpyDeviceToHost, streams[i]));
+                // CUDA_CHECK(cudaMemcpyAsync(host_data[i].hpc_orig_pos, gpu_data[i].d_hpc_orig_pos, sizeof(T_read_len) * batch_size[i], cudaMemcpyDeviceToHost, streams[i]));
                 CUDA_CHECK(cudaMemcpyAsync(host_data[i].read_len, gpu_data[i].d_read_len, sizeof(T_read_len) * host_data[i].reads_cnt, cudaMemcpyDeviceToHost, streams[i]));
                 // TOxDO: add new reads and new reads_offs
-                CUDA_CHECK(cudaStreamSynchronize(streams[i]));
                 // TOxDO: D2H copy reads and calculate reads_offs
             }
             
             // -- Free device memory --
-            if (HPC) CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_hpc_orig_pos, streams[i]));
-            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_reads, streams[i]));
-            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_read_offs, streams[i]));
-            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_read_len, streams[i]));
-            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_minimizers, streams[i]));
-            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_superkmer_offs, streams[i]));
-            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skm_part_bytes, streams[i]));
-            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skm_cnt, streams[i]));
-            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_kmer_cnt, streams[i]));
-            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_store_pos, streams[i]));
-            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skm_store_csr, streams[i]));
-            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skmpart_offs, streams[i]));
+            // // if (HPC) CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_hpc_orig_pos, streams[i]));
+            // CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_reads, streams[i]));
+            // CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_read_offs, streams[i]));
+            // CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_read_len, streams[i]));
+            // CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_minimizers, streams[i]));
+            // CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skm_offs, streams[i]));
+            // CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skm_part_bytes, streams[i]));
+            // CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skm_cnt, streams[i]));
+            // CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_kmer_cnt, streams[i]));
+            // CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_store_pos, streams[i]));
+            // CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skm_store_csr, streams[i]));
+            // CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skmpart_offs, streams[i]));
         }
         // ==== CPU Store SKMs ====
         for (i = 0; i < started_streams; i++) {
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             // process_func(host_data[i]);
             SKMStoreNoncon::save_batch_skms (skm_partition_stores, host_data[i].skm_cnt, host_data[i].kmer_cnt, host_data[i].skmpart_offs, host_data[i].skm_store_csr);
-            
+            // TODO: move above out for better pipelining
+
             // -- clean host variables --
             if (HPC) {
-                delete [] host_data[i].hpc_orig_pos;//
+                // delete [] host_data[i].hpc_orig_pos;//
                 delete [] host_data[i].read_len;//
             }
             
@@ -710,6 +738,9 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             // if (write to file) delete [] host_data[i].skm_store_csr;// will not be deleted until program ends
         }
     }
+    for (i=0; i<gpars.n_streams; i++)
+        CUDA_CHECK(cudaStreamDestroy(streams[i]));
+    
     logger->log(logs);
     #ifdef MMFILTER_TIMING
     mm_filter_tot_time += int(time_filter);

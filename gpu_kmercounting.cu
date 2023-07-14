@@ -1,16 +1,18 @@
-// #define GPU_EXTRACT_TIMING
-// #define TIMING_CUDAMEMCPY
+// #define LONGERKMER
 
 #define CUDA_CHECK(call) \
 if((call) != cudaSuccess) { \
     cudaError_t err = cudaGetLastError(); \
     cerr << "CUDA error calling \""#call"\", code is " << err << ": " << cudaGetErrorString(err) << endl; \
+    size_t avail, total; \
+    cudaMemGetInfo(&avail, &total); \
+    cerr << "Available memory: " << avail/1048576 << " Total memory: " << total/1048576 << endl; \
     exit(1); \
 }
 #define CUDA_MALLOC_CHECK(call) \
-while((call) != cudaSuccess) { \
+for (int _i_cuRetry=0; (call) != cudaSuccess; _i_cuRetry++) { \
     cudaError_t err = cudaGetLastError(); \
-    cerr << "Malloc error: \""#call"\", code is " << err << ": " << cudaGetErrorString(err) << endl; \
+    if (_i_cuRetry%50 == 0) cerr << "("<<_i_cuRetry<<") Malloc error: \""#call"\", code is " << err << ": " << cudaGetErrorString(err) << endl; \
     this_thread::sleep_for(100ms); \
 }
 #define CUFILE_STATUS_CHECK(cuerr, lineno) \
@@ -33,72 +35,32 @@ if (cuerr.cu_err != CUDA_SUCCESS) { \
 // #include <unistd.h> // close
 // #include "cufile.h"
 
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-#include <thrust/sort.h>
-#include <thrust/sequence.h>
-// #include <thrust/scan.h>
-#include <thrust/remove.h>
-#include <thrust/execution_policy.h>
-#include <thrust/iterator/constant_iterator.h> // Required by CUDA12+
+// #include <thrust/host_vector.h>
+// #include <thrust/device_vector.h>
+// #include <thrust/sort.h>
+// #include <thrust/sequence.h>
+// #include <thrust/remove.h>
+// #include <thrust/execution_policy.h>
+// #include <thrust/iterator/constant_iterator.h> // Required by CUDA12+
 
-// #include "types.h"
-// #include "skmstore.hpp"
-// #include <vector>
+#include <cub/cub.cuh>
+
 #include "gpu_kmercounting.h"
 #include "utilities.hpp"
 #include <fstream>
+#include <sstream>
+#include "cuda_utils.cuh"
 using namespace std;
-// using namespace nvcomp;
 
 extern Logger *logger;
 
-struct sameasprev {
-    sameasprev() {}
-    __host__ __device__
-        bool operator()(const T_kmer& x, const T_kmer& y) const { 
-            return x==y;
-        }
-};
-struct canonicalkmer {
-    canonicalkmer() {}
-    __host__ __device__
-        T_kmer operator()(const T_kmer& x, const T_kvalue k) const {
-            T_kmer x1 = ~x, res=0;
-            for (T_kvalue i=0; i<k; i++) {
-                res = (res << 2) | (x1 & 0b11);
-                x1 = x1 >> 2;
-            }
-            return res < x ? res : x;
-        }
-};
-// struct replaceidx {
-//     replaceidx() {}
-//     __host__ __device__
-//         T_read_len operator()(const T_read_len& x, const T_read_len& y) const {
-//             return x*y;
-//         }
-// };
-// struct is_zero {
-//     __host__ __device__
-//         bool operator()(const T_read_len x)
-//         {
-//             return x==0;
-//         }
-// };
-
 __device__ void _process_bytes (size_t beg, size_t end, u_char* d_skms, T_kmer *d_kmers, unsigned long long *d_kmer_store_pos, T_kvalue k) {
     // if called, stop until at least one skm is processed whatever end is exceeded
-    // T_kmer kmer_mask = T_kmer(0xffffffffffffffff>>(64-k*2));
     T_kmer kmer_mask = (T_kmer)(((T_kmer)(-1)) >> (sizeof(T_kmer)*8-k*2));
     size_t i;
     T_kmer kmer;
     T_kvalue kmer_bases; // effective bases
     unsigned long long store_pos;
-
-    // const unsigned long long KMER_BATCH_SIZE = 256;
-    // unsigned long long  res_size = (k/3+4)*3/*max bytes for a SKM with only 1 kmer*/ * KMER_BATCH_SIZE;
-    // unsigned long long  in_batch_cnt = KMER_BATCH_SIZE;
 
     u_char indicator, ii;
     u_char beg_selector[4] = {0, 0b00000011, 0b00001111, 0b00111111};
@@ -122,41 +84,15 @@ __device__ void _process_bytes (size_t beg, size_t end, u_char* d_skms, T_kmer *
             ii = k-kmer_bases; // ii: bases used of the current byte
         }
         store_pos = atomicAdd(d_kmer_store_pos, 1);
-        // // assign space to store kmers (replace line above)
-        // if (in_batch_cnt == KMER_BATCH_SIZE && i + res_size >= end)
-        //     store_pos = atomicAdd(d_kmer_store_pos, 1);
-        // else {
-        //     store_pos++;
-        //     if (in_batch_cnt == KMER_BATCH_SIZE) {
-        //         in_batch_cnt = 0;
-        //         store_pos = atomicAdd(d_kmer_store_pos, KMER_BATCH_SIZE);
-        //     }
-        //     in_batch_cnt++;
-        // }
-        // //
 
         d_kmers[store_pos] = kmer;
-        // printf(" %llu\n", kmer);
         
         // generate and store the next kmers
         indicator = (d_skms[i]>>6) & 0b11;
         while ((indicator == BYTE_BASES) | (ii < indicator)) { // full block or ii not end
             kmer = ((kmer << 2) | ((d_skms[i] >> ((BYTE_BASES-ii-1)*2)) & 0b11)) & kmer_mask;
             store_pos = atomicAdd(d_kmer_store_pos, 1);
-            // // assign space to store kmers (replace line above)
-            // if (in_batch_cnt == KMER_BATCH_SIZE && i + res_size >= end)
-            //     store_pos = atomicAdd(d_kmer_store_pos, 1);
-            // else {
-            //     store_pos++;
-            //     if (in_batch_cnt == KMER_BATCH_SIZE) {
-            //         in_batch_cnt = 0;
-            //         store_pos = atomicAdd(d_kmer_store_pos, KMER_BATCH_SIZE);
-            //     }
-            //     in_batch_cnt++;
-            // }
-            // //
             d_kmers[store_pos] = kmer;
-            // printf(" %llu\n", kmer);
             ii = (ii+1) % BYTE_BASES;
             i += (ii == 0);
             indicator = (d_skms[i]>>6) & 0b11;
@@ -167,35 +103,11 @@ __device__ size_t _find_full_nonfull_pos (size_t beg, size_t end, u_char* d_skms
     u_char FN_pos_found = 0; // 0: not found, 1: find full byte, 2: find non-full block after a full
     size_t i;
     for (i = beg; (FN_pos_found<2) & (i < end); i++) {
-        // FN_pos_found |= ((d_skms[i] & 0b11000000) == 0b11000000); // if full block found, beg_pos_found=1
-        // FN_pos_found <<= ((d_skms[i] & 0b11000000) < 0b11000000); // if non-full block found, beg_pos_found*=2
         FN_pos_found |= (d_skms[i] >= 0b11000000); // if full block found, beg_pos_found=1
         FN_pos_found <<= (d_skms[i] < 0b11000000); // if non-full block found, beg_pos_found*=2
     }
     return (FN_pos_found>=2) * i + (FN_pos_found<2) * NULL_POS; // return the next position after a full and nonfull
 }
-// __global__ void GPU_Extract_Kmers (u_char* d_skms, size_t tot_bytes, T_kmer *d_kmers, unsigned long long *d_kmer_store_pos, T_kvalue k) {
-//     int n_t = blockDim.x * gridDim.x;
-//     int tid = blockDim.x * blockIdx.x + threadIdx.x;
-//     size_t bytes_per_thread = (tot_bytes + n_t - 1) / n_t; // min: 1
-//     size_t i, search_ending; // which byte to process
-//     size_t beg_byte_pos, end_byte_pos;
-//     for (i = tid*bytes_per_thread; i/*+bytes_per_thread*/ < tot_bytes; i += n_t*bytes_per_thread) {
-//         // printf("i: %llu %llu\n",i,bytes_per_thread);
-//         // find begin byte:
-//         beg_byte_pos = i==0 ? 0 : _find_full_nonfull_pos(i, i+bytes_per_thread+1, d_skms); // if i==0 begin position is ULL_MAX+1=0, begins from 0
-//         // find end byte: (make sure the last full byte is in the area of at least the next thread)
-//         search_ending = i+2*bytes_per_thread < tot_bytes ? i+2*bytes_per_thread : tot_bytes;
-//         end_byte_pos = _find_full_nonfull_pos (i+bytes_per_thread, search_ending, d_skms);
-//         end_byte_pos = (end_byte_pos < search_ending) * end_byte_pos + (end_byte_pos >= search_ending) * search_ending;
-//         if (beg_byte_pos < tot_bytes) {
-//             // printf("%llu process %llu %llu (%d %llu)\n",tot_bytes, beg_byte_pos, end_byte_pos, tid, i);
-//             // printf("%llu %llu\n",beg_byte_pos,end_byte_pos);
-//             _process_bytes(beg_byte_pos, end_byte_pos, d_skms, d_kmers, d_kmer_store_pos, k);
-//         }
-//     }
-//     return;
-// }
 
 __global__ void GPU_Extract_Kmers (u_char* d_skms, size_t tot_bytes, T_kmer *d_kmers, unsigned long long *d_kmer_store_pos, T_kvalue k) {
     int n_t = blockDim.x * gridDim.x;
@@ -212,83 +124,28 @@ __global__ void GPU_Extract_Kmers (u_char* d_skms, size_t tot_bytes, T_kmer *d_k
         search_ending2 = i+2*bytes_per_thread < tot_bytes ? i+2*bytes_per_thread : tot_bytes;
         end_byte_pos = _find_full_nonfull_pos (search_ending1-1, search_ending2, d_skms);
         end_byte_pos = (end_byte_pos < search_ending2) * end_byte_pos + (end_byte_pos >= search_ending2) * search_ending2; // DEBUGGED DONE
-        // end_byte_pos = (end_byte_pos < tot_bytes) * end_byte_pos + (end_byte_pos >= tot_bytes) * tot_bytes;
+        
         if (beg_byte_pos < end_byte_pos) {
-            // printf("%llu process %llu %llu (%d %llu)\n",tot_bytes, beg_byte_pos, end_byte_pos, tid, i);
-            // printf("%llu %llu\n",beg_byte_pos,end_byte_pos);
             _process_bytes(beg_byte_pos, end_byte_pos, d_skms, d_kmers, d_kmer_store_pos, k);
         }
     }
     return;
 }
 
-#ifdef DEBUG
-__global__ void GPU_Extract_Kmers_test (u_char* d_skms, size_t tot_bytes, T_kmer *d_kmers, unsigned long long *d_kmer_store_pos, T_kvalue k) {
-    if (blockDim.x * blockIdx.x + threadIdx.x == 0) {
-        bool beg = true;
-        for (size_t i = 0; i < tot_bytes; i++) {
-            if (beg) {
-                printf("\n");
-                for (size_t j = 3-(d_skms[i]>>6); j < 3; j++) {
-                    printf("%u", (unsigned char)((d_skms[i]>>((2-j)*2)))&0b11);
-                } printf(" ");
-                beg = false;
-            } else {
-                for (size_t j = 0; j < (d_skms[i]>>6); j++) {
-                    printf("%u", (unsigned char)((d_skms[i]>>((2-j)*2)))&0b11);
-                } printf(" ");
-                beg = (d_skms[i]>>6)!=3;
-            }
-        }
-    }
-}
-#endif
+void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, u_char* d_skms, _out_ T_kmer* d_kmers, cudaStream_t &stream, int BpG2=8, int TpB2=256) {
 
-__host__ u_char* load_SKM_from_file (SKMStoreNoncon &skms_store, cudaStream_t &stream) {
-    u_char* d_skms;
-    CUDA_CHECK(cudaMallocAsync((void**) &(d_skms), skms_store.tot_size_bytes, stream));
-    skms_store.load_from_file();
-    CUDA_CHECK(cudaMemcpyAsync(d_skms, skms_store.skms_from_file, skms_store.tot_size_bytes, cudaMemcpyHostToDevice, stream));
-    delete skms_store.skms_from_file;
-    return d_skms;
-}
-
-#ifdef TIMING_CUDAMEMCPY
-float Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* d_kmers, cudaStream_t &stream, int BpG2=8, int TpB2=256) {
-#else
-void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* d_kmers, cudaStream_t &stream, int BpG2=8, int TpB2=256) {
-#endif
-    // cudaStream_t stream;
-    // CUDA_CHECK(cudaStreamCreate(&stream));
-    
-    #ifdef TIMING_CUDAMEMCPY
-    cudaEvent_t memcpy_start, memcpy_end;
-    cudaEventCreate(&memcpy_start); cudaEventCreate(&memcpy_end);
-    #endif
-
-    u_char* d_skms;
-    
-    unsigned long long *d_kmer_store_pos;
-    CUDA_MALLOC_CHECK(cudaMallocAsync((void**) &(d_kmer_store_pos), sizeof(size_t), stream));
+    unsigned long long *d_kmer_store_pos; // for device atomic add, cannot use size_t
+    CUDA_MALLOC_CHECK(cudaMalloc((void**) &(d_kmer_store_pos), sizeof(unsigned long long)));//
     CUDA_CHECK(cudaMemsetAsync(d_kmer_store_pos, 0, sizeof(unsigned long long), stream));
 
     // ---- copy skm chunks H2D ----
-    if (skms_store.to_file) d_skms = load_SKM_from_file(skms_store, stream);
+    if (skms_store.to_file) {
+        skms_store.load_from_file();
+        CUDA_CHECK(cudaMemcpy(d_skms, skms_store.skms_from_file, skms_store.tot_size_bytes, cudaMemcpyHostToDevice));
+        delete skms_store.skms_from_file;
+    }
     else {
-        CUDA_MALLOC_CHECK(cudaMallocAsync((void**) &(d_skms), skms_store.tot_size_bytes+1, stream));
-        // CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes+1));
-        // u_char *d_store_pos = d_skms;
-        
-        #ifdef TIMING_CUDAMEMCPY
-        cudaEventRecord(memcpy_start, stream);
-        #endif
-    
-        // #ifdef SKMSTOREV1
-        // for (i=0; i<skms_store.skm_chunk_bytes.size(); i++) {
-        //     CUDA_CHECK(cudaMemcpyAsync(d_skms+d_store_pos, skms_store.skm_chunks[i], skms_store.skm_chunk_bytes[i], cudaMemcpyHostToDevice, stream));
-        //     // CUDA_CHECK(cudaStreamSynchronize(stream)); // 不加这行用CPU step 1会卡死 7.60s(+) vs 7.40s(-) // TODO: check this
-        //     d_store_pos += skms_store.skm_chunk_bytes[i];
-        // }
+        assert(skms_store.tot_size_bytes <= skms_store.kmer_cnt * sizeof(T_kmer));
         #ifdef _SKMSTORE2_HPP
         CUDA_CHECK(cudaMemcpyAsync(d_skms, skms_store.skms.c_str(), skms_store.tot_size_bytes, cudaMemcpyHostToDevice, stream));
         #else
@@ -301,248 +158,304 @@ void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* d_kmer
             for (i=0; i<count; i++) {
                 CUDA_CHECK(cudaMemcpyAsync(d_skms+d_store_pos, skm_bulk[i].skm_chunk, skm_bulk[i].chunk_bytes, cudaMemcpyHostToDevice, stream));
                 d_store_pos += skm_bulk[i].chunk_bytes;
-                // memcpy(skms+skm_store_pos, skm_bulk[i].skm_chunk, skm_bulk[i].chunk_bytes);
-                // skm_store_pos += skm_bulk[i].chunk_bytes;
             }
         } while (count);
         #endif
-
-        #ifdef TIMING_CUDAMEMCPY
-        cudaEventRecord(memcpy_end, stream);
-        #endif
     }
-    // cerr<<"debug2"<<endl;
-    // CUDA_CHECK(cudaStreamSynchronize(stream));
     // ---- GPU work ----
-    if (skms_store.tot_size_bytes / 4 <= BpG2 * TpB2) GPU_Extract_Kmers<<<1, skms_store.tot_size_bytes/64+1, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k); // 强行debug // mountain of shit, do not touch
-    else GPU_Extract_Kmers<<<BpG2, TpB2, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
-    // GPU_Extract_Kmers_test<<<BpG2, TpB2, 0, stream>>>(d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
+    CUDA_CHECK(cudaStreamSynchronize(stream));// // wait for d_kmer_store_pos
+    if (skms_store.tot_size_bytes / 4 <= BpG2 * TpB2) 
+        GPU_Extract_Kmers<<<1, skms_store.tot_size_bytes/64+1, 0, stream>>> // 强行debug // mountain of shit, do not touch
+            (d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
+    else 
+        GPU_Extract_Kmers<<<BpG2, TpB2, 0, stream>>>
+            (d_skms, skms_store.tot_size_bytes, d_kmers, d_kmer_store_pos, k);
     
-    CUDA_CHECK(cudaFreeAsync(d_skms, stream));
-    CUDA_CHECK(cudaFreeAsync(d_kmer_store_pos, stream));
-    
-    #ifdef TIMING_CUDAMEMCPY
-    float cudamemcpy_time;
-    cudaEventSynchronize(memcpy_end);
-    cudaEventElapsedTime(&cudamemcpy_time, memcpy_start, memcpy_end);
-    return cudamemcpy_time;
-    #endif
+    // aaaaaaaaaaaa debug passed
+    // #ifndef LONGERKMER
+    // #ifndef SHORTERKMER
+    // cudaStreamSynchronize(stream);
+    // T_kmer *tmp = new T_kmer[skms_store.kmer_cnt];
+    // cudaMemcpy(tmp, d_kmers, sizeof(T_kmer)*skms_store.kmer_cnt, cudaMemcpyDeviceToHost);
+    // T_kmer t_min = 0xFFFFFFFFFFFFFFFFu, t_max = 0;
+    // for (int t=0; t<skms_store.kmer_cnt; t++) {
+    //     if (tmp[t]<t_min) t_min=tmp[t];
+    //     if (tmp[t]>t_max) t_max=tmp[t];
+    // }
+    // cerr<<"PART"<<skms_store.id<<" min "<<t_min<<" max "<<t_max<<endl;
+    // delete tmp;
+    // #endif
+    // #endif
 
     return;
 }
 
-#ifdef TIMING_CUDAMEMCPY
-extern atomic<int> debug_cudacp_timing;
+__device__  T_kmer _cano_kmer(const T_kmer& x, const T_kvalue k) {
+    T_kmer x1 = ~x, res=0;
+    for (T_kvalue i=0; i<k; i++) {
+        res = (res << 2) | (x1 & 0b11);
+        x1 = x1 >> 2;
+    }
+    return res < x ? res : x;
+}
+__global__ void canonical_kmer(T_kmer *d_kmers, const T_kvalue k, const size_t n) {
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    int n_t = blockDim.x * gridDim.x;
+    for (size_t i = tid; i < n; i += n_t) {
+        d_kmers[i] = _cano_kmer(d_kmers[i], k);
+    }
+}
+template<typename T_data> // inferred typename
+__host__ void CubSort_db(cub::DoubleBuffer<T_data> &d_db, MyDevicePtr &d_temp_storage, T_kvalue k, T_skm_partsize N, cudaStream_t &stream) {
+    size_t   temp_storage_bytes = 0;
+    CUDA_CHECK(cub::DeviceRadixSort::SortKeys(nullptr, temp_storage_bytes, d_db, N, 0, k*2));
+    d_temp_storage.use(temp_storage_bytes);
+    CUDA_CHECK(cub::DeviceRadixSort::SortKeys(d_temp_storage.ptr, temp_storage_bytes, d_db, N, 0, k*2, stream));
+}
+#ifdef LONGERKMER
+struct CompareOpT {
+    template <typename T>
+    __device__ __forceinline__ bool operator()(const T &lhs, const T &rhs) const {
+        return lhs < rhs;
+    }
+};
+__host__ void CubMergeSort(T_kmer *d_in, MyDevicePtr &d_temp, T_skm_partsize N, cudaStream_t &stream) {
+    size_t   temp_storage_bytes = 0;
+    // Check the required buffer temp size and allocate the buffer:
+    CompareOpT custom_op;
+    CUDA_CHECK(cub::DeviceMergeSort::SortKeys(nullptr, temp_storage_bytes, d_in, N, custom_op));
+    d_temp.use(temp_storage_bytes);
+    CUDA_CHECK(cub::DeviceMergeSort::SortKeys(d_temp.ptr, temp_storage_bytes, d_in, N, custom_op, stream));
+}
 #endif
 
-// extern PriorMutex *pm;
-#ifdef P2TIMING
-extern atomic<int> debug_time0, debug_time1, debug_time2, debug_time3;
-#endif
+__host__ void CubRLE(T_skm_partsize N, T_kmer *d_in_unique_out, T_kmer_cnt *d_counts_out, T_skm_partsize *d_num_runs_out, MyDevicePtr &d_temp_storage, cudaStream_t stream) {
 
+    T_kmer *d_in = d_in_unique_out;
+    T_kmer *d_unique_out = d_in_unique_out;
+
+    // Determine requirements and allocate temporary device storage
+    size_t   temp_storage_bytes = 0;
+    CUDA_CHECK(cub::DeviceRunLengthEncode::Encode(nullptr, temp_storage_bytes, d_in, d_unique_out, d_counts_out, d_num_runs_out, N));
+    d_temp_storage.use(temp_storage_bytes);
+    CUDA_CHECK(cub::DeviceRunLengthEncode::Encode(d_temp_storage.ptr, temp_storage_bytes, d_in, d_unique_out, d_counts_out, d_num_runs_out, N, stream));
+}
+
+/// @brief Assign corresponding position in d_out with 1 if the value in d_in pass the filter, otherwise 0.
+/// @param d_in     [2, 4, 3, 5, 1, 8]
+/// @param d_out    [0, 1, 1, 1, 0, 0]
+/// @param N        6
+/// @param low_thr  3
+/// @param max_thr  5
+/// @return 
+__global__ void ClearLowHighAbundance(T_kmer_cnt *d_counts, T_skm_partsize N, T_kmer_cnt low_thr, T_kmer_cnt max_thr) {
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    int n_t = blockDim.x * gridDim.x;
+    for (size_t i = tid; i < N; i += n_t) {
+        if (d_counts[i] < low_thr || d_counts[i] > max_thr) 
+            d_counts[i] = 0;
+    }
+}
+
+struct IsNotZero {
+    CUB_RUNTIME_FUNCTION __forceinline__ __host__ __device__
+    bool operator() (const T_kmer_cnt &a) const { return a != 0; }
+};
+__host__ void FilterOutKmers(T_kmer_cnt *d_cnt, T_kmer *d_kmer, T_skm_partsize N, T_skm_partsize *d_counts_out, MyDevicePtr &d_temp_storage, cudaStream_t stream) {
+    size_t   temp_storage_bytes = 0;
+    // Filter out low abundance k-mers
+    CUDA_CHECK(cub::DeviceSelect::Flagged(nullptr, temp_storage_bytes, d_kmer, d_cnt, d_counts_out, N));
+    d_temp_storage.use(temp_storage_bytes);
+    CUDA_CHECK(cub::DeviceSelect::Flagged(d_temp_storage.ptr, temp_storage_bytes, d_kmer, d_cnt, d_counts_out, N, stream));
+    // Filter out the counts of low abundance k-mers
+    IsNotZero op;
+    CUDA_CHECK(cub::DeviceSelect::If(nullptr, temp_storage_bytes, d_cnt, d_counts_out, N, op));
+    d_temp_storage.use(temp_storage_bytes);
+    CUDA_CHECK(cub::DeviceSelect::If(d_temp_storage.ptr, temp_storage_bytes, d_cnt, d_counts_out, N, op, stream));
+}
+
+thread_local vector<MyDevicePtr> kmers_d_vec(PAR.n_streams_p2); // save k-mer and count result (large xGB)
+thread_local vector<MyDevicePtr> temp_d_vec(PAR.n_streams_p2);  // as CUB temp space (small x0MB)
+thread_local vector<MyDevicePtr> d_num_runs_out(PAR.n_streams_p2);  // number of unique kmers
+
+/// @brief 
+/// @param k K-value of kmer.
+/// @param skms_stores SKM partitions to be processed.
+/// @param gpars GPU parameters.
+/// @param kmer_min_freq 
+/// @param kmer_max_freq 
+/// @param kmc_result_curthread 
+/// @param avg_kmer_cnt Average number of kmers per partion, this value is for VRAM allocation.
+/// @param gpuid 
+/// @param tid 
+/// @return 
 __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
                                vector<SKMStoreNoncon*> skms_stores, CUDAParams &gpars,
                                T_kmer_cnt kmer_min_freq, T_kmer_cnt kmer_max_freq,
-                               _out_ vector<T_kmc> kmc_result_curthread [], int gpuid, int tid) {
-    // using CUDA Thrust
-    // int gpuid = (gpars.device_id++)%gpars.n_devices;
-    CUDA_CHECK(cudaSetDevice(gpuid));
-    // V2:
-    // if (gpars.gpuid_thread[tid] == -1) {
-    //     CUDA_CHECK(cudaSetDevice(tid%gpars.n_devices));
-    //     gpars.gpuid_thread[tid] = tid%gpars.n_devices;
-    // }
-    // int gpuid = gpars.gpuid_thread[tid];
+                               string result_file_prefix, size_t avg_kmer_cnt, int gpuid, int tid) {
     
-    size_t return_value = 0;
+    CUDA_CHECK(cudaSetDevice(gpuid));
+    
     int i, n_streams = skms_stores.size();
     cudaStream_t streams[n_streams];
-    #ifdef GPU_EXTRACT_TIMING
-    cudaEvent_t start[n_streams], mid[n_streams], stop[n_streams];
-    #endif
 
-    vector<thrust::device_vector<T_kmer>> kmers_d_vec(n_streams); // for 0
-    vector<size_t> tot_kmers(n_streams);
-    string logs = "GPU "+to_string(gpuid)+"\t(T"+to_string(tid)+"):";
-
-    #ifdef P2TIMING
-    WallClockTimer wct0;
-    #endif
-
+    // ---- 0. Extract kmers from SKMStore: ---- 
     for (i=0; i<n_streams; i++) {
         CUDA_CHECK(cudaStreamCreate(&streams[i]));
-        #ifdef GPU_EXTRACT_TIMING
-        cudaEventCreate(&start[i]); cudaEventCreate(&mid[i]); cudaEventCreate(&stop[i]);
-        cudaEventRecord(start[i], streams[i]);
-        #endif
-        // logger->log("GPU "+to_string(gpuid)+" Stream "+to_string(i)+" counting Partition "+to_string(skms_stores[i]->id), Logger::LV_INFO);
-        logs += "\tS "+to_string(i)+" Part "+to_string(skms_stores[i]->id)+" "+to_string(skms_stores[i]->tot_size_bytes)+"|"+to_string(skms_stores[i]->kmer_cnt);
-        // logger->log(logs, Logger::LV_INFO);
-        if (skms_stores[i]->tot_size_bytes != 0) {
-            // ---- 0. Extract kmers from SKMStore: ---- 
-            int retry_cnt = 32;
-            beg_alloc_kmer:;
-            try {
-                kmers_d_vec[i] = thrust::device_vector<T_kmer>(skms_stores[i]->kmer_cnt);
-            // } catch(thrust::system_error e) {
-            } catch(thrust::system::detail::bad_alloc e) {
-                cerr<<"Out of VRAM for kmers, now retry ... "<<retry_cnt<<endl;
-                this_thread::sleep_for(500ms);
-                if (retry_cnt-- <= 0) {logger->log(e.what(), Logger::LV_FATAL); exit(1);}
-                goto beg_alloc_kmer;
-            }
-            T_kmer *d_kmers_data = thrust::raw_pointer_cast(kmers_d_vec[i].data());
-            // if (GPU_compression) Extract_Kmers_Compressed(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2, gpuid);
-            // pm->high_lock();
-            #ifdef TIMING_CUDAMEMCPY
-            float timing = Extract_Kmers(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2);
-            debug_cudacp_timing += (int)timing;
-            timing = skms_stores[i]->tot_size_bytes / (timing) / 1e6;
-            logs += " [Eff.BW "+to_string(timing)+" GB/s]";
-            #else
-            /*else*/ Extract_Kmers(*skms_stores[i], k, d_kmers_data, streams[i], gpars.BpG2, gpars.TpB2);
-            #endif
-            // pm->high_unlock();
-            tot_kmers[i] = kmers_d_vec[i].size();
-        }
-        #ifdef GPU_EXTRACT_TIMING
-        cudaEventRecord(mid[i], streams[i]);
-        #endif
-    }
-
-    #ifdef P2TIMING
-    cudaStreamSynchronize(streams[0]);
-    debug_time0 += wct0.stop(true);
-    // cerr<<"wct0: "<<wct0.stop(true)<<endl;
-    WallClockTimer wct1;
-    #endif
-
-    thrust::constant_iterator<T_kvalue> ik(k);
-    vector<thrust::device_vector<bool>> same_flag_d_vec(n_streams); // for 3
-    for (i=0; i<n_streams; i++) {
-        if (skms_stores[i]->tot_size_bytes != 0) {
-            // CUDA_CHECK(cudaStreamSynchronize(streams[i])); // maybe don't need this?
-            // ---- 1. convert to canonical kmers ---- 
-            thrust::transform(thrust::device.on(streams[i]), kmers_d_vec[i].begin(), kmers_d_vec[i].end(), ik, kmers_d_vec[i].begin(), canonicalkmer());
-            // ---- 2. sort: [ABCBBAC] -> [AABBBCC] (kmers_d) ---- 
-            thrust::sort(thrust::device.on(streams[i]), kmers_d_vec[i].begin(), kmers_d_vec[i].end()/*, thrust::greater<T_kmer>()*/);
-            skms_stores[i]->clear_skm_data(); // TODO: 在sort之前加streamsync
-            // ---- 3. find changes: [AABBBCC] -> [0,1,0,1,1,0,1] (same_flag_d) ---- 
-            int retry_cnt = 32;
-            beg_alloc_flag:;
-            try {
-                same_flag_d_vec[i] = thrust::device_vector<bool>(kmers_d_vec[i].size());
-            } catch(thrust::system::detail::bad_alloc e) {
-                cerr<<"Out of VRAM for same_flag_d_vec, now retry..."<<endl;
-                this_thread::sleep_for(250ms);
-                if (retry_cnt-- <= 0) {logger->log(e.what(), Logger::LV_FATAL); exit(1);}
-                goto beg_alloc_flag;
-            }
-            thrust::transform(thrust::device.on(streams[i]), kmers_d_vec[i].begin()+1 /*x beg*/, kmers_d_vec[i].end() /*x end*/, kmers_d_vec[i].begin()/*y beg*/, same_flag_d_vec[i].begin()+1/*res beg*/, sameasprev());
-        }
-    }
-
-    #ifdef P2TIMING
-    cudaStreamSynchronize(streams[0]);
-    debug_time1 += wct1.stop(true);
-    // cerr<<"wct1: "<<wct1.stop(true)<<endl;
-    WallClockTimer wct2;
-    #endif
-
-    vector<thrust::device_vector<T_read_len>> idx_d_vec(n_streams); // for 4
-    vector<thrust::host_vector<T_kmer>> sorted_kmers_h_vec(n_streams); // for 4+
-    vector<thrust::host_vector<T_read_len>> idx_h_vec(n_streams); // for 5
-    for (i=0; i<n_streams; i++) {
-        if (skms_stores[i]->tot_size_bytes != 0) {
-            // ---- 3. find changes (cont'd)
-            same_flag_d_vec[i][0] = 0; // will it call stream sync?
-            // ---- 4. remove same idx: [0123456] [0101101] -> [0,2,5] (idx_d) ----
-            int retry_cnt = 32;
-            beg_alloc_idx:;
-            try {
-                idx_d_vec[i] = thrust::device_vector<T_read_len>(kmers_d_vec[i].size());
-            } catch(thrust::system::detail::bad_alloc e) {
-                cerr<<"Out of VRAM for idx_d_vec, now retry..."<<endl;
-                this_thread::sleep_for(250ms);
-                if (retry_cnt-- <= 0) {logger->log(e.what(), Logger::LV_FATAL); exit(1);}
-                goto beg_alloc_idx;
-            }
-            thrust::sequence(thrust::device.on(streams[i]), idx_d_vec[i].begin(), idx_d_vec[i].end());
-            auto newend_idx_d = thrust::remove_if(thrust::device.on(streams[i]), idx_d_vec[i].begin(), idx_d_vec[i].end(), same_flag_d_vec[i].begin(), thrust::identity<bool>()); // new_end_idx_d is an iterator
-            // 4+. copy sorted kmers back to host
-            auto newend_sorted_cleared_kmers_d = thrust::remove_if(thrust::device.on(streams[i]), kmers_d_vec[i].begin(), kmers_d_vec[i].end(), same_flag_d_vec[i].begin(), thrust::identity<bool>()); // new_end_idx_d is an iterator
-            sorted_kmers_h_vec[i] = thrust::host_vector<T_kmer>(kmers_d_vec[i].begin(), newend_sorted_cleared_kmers_d);
-            volatile T_kmer tmp_kmer = sorted_kmers_h_vec[i][0];
-            // ---- 5. copy device_vector back to host_vector ----
-            idx_h_vec[i] = thrust::host_vector<T_read_len>(idx_d_vec[i].begin(), newend_idx_d);
-            idx_h_vec[i].push_back(tot_kmers[i]); // [0,2,5] -> [0,2,5,7] A2 B3 C2
-        }
-        #ifdef GPU_EXTRACT_TIMING
-        cudaEventRecord(stop[i], streams[i]);
-        #endif
-    }
-    
-    #ifdef P2TIMING
-    cudaStreamSynchronize(streams[0]);
-    // cerr<<"wct2: "<<wct2.stop(true)<<endl;
-    debug_time2 += wct2.stop(true);
-    WallClockTimer wct3;
-    #endif
-
-    #ifdef RESULT_VALIDATION
-    // validation and export result:
-    for (i=0; i<n_streams; i++) {
-        // string outfile = "/mnt/f/study/bio_dataset/tmp/" + to_string(skms_stores[i]->id) + ".txt";
-        // FILE *fp = fopen(outfile.c_str(), "w");
-
         if (skms_stores[i]->tot_size_bytes == 0) continue;
-        size_t total_kmer_cnt = 0;
-        T_kmer_cnt cnt;
-        for(int j=0; j<idx_h_vec[i].size()-1; j++) {
-            cnt = idx_h_vec[i][j+1]-idx_h_vec[i][j] > MAX_KMER_CNT ? MAX_KMER_CNT : idx_h_vec[i][j+1]-idx_h_vec[i][j];
-            total_kmer_cnt += idx_h_vec[i][j+1]-idx_h_vec[i][j];
-            // Add kmer-cnt to result vector:
-            // if (cnt >= kmer_min_freq && cnt <= kmer_max_freq) {
-            //     kmc_result_curthread[skms_stores[i]->id].push_back({sorted_kmers_h[idx_h[j]], cnt});
-            //     kmc_result_curthread[skms_stores[i]->id].push_back({sorted_kmers_h[j], cnt});
-            // }
-            // cerr<<sorted_kmers_h_vec[i][j]<<": "<<idx_h_vec[i][j+1]-idx_h_vec[i][j]<<endl;
-            // if (idx_h_vec[i][j+1]-idx_h_vec[i][j] > 1)
-            //     fprintf(fp, "%llu %llu\n", sorted_kmers_h_vec[i][j], idx_h_vec[i][j+1]-idx_h_vec[i][j]);
-        }
-        assert(total_kmer_cnt == skms_stores[i]->kmer_cnt);
-        // fclose(fp);
+        
+        // VRAM allocation
+        size_t vram_alloc_kmer_cnt = max(skms_stores[i]->kmer_cnt, avg_kmer_cnt*3/2);
+        #ifndef LONGERKMER
+        // For CUB radix sort, saving kmer counts into kmer space (allocate d_kmer 2*N*T_kmer)
+        size_t vram_required = max(max(
+            vram_alloc_kmer_cnt * sizeof(T_kmer)*2, 
+            vram_alloc_kmer_cnt * (sizeof(T_kmer) + sizeof(T_kmer_cnt))), 
+            vram_alloc_kmer_cnt * sizeof(T_kmer) + skms_stores[i]->tot_size_bytes
+        );
+        #else
+        // For CUB merge sort, saving kmer counts into temp space (allocate d_kmer only N*T_kmer)
+        size_t vram_required = vram_alloc_kmer_cnt * (sizeof(T_kmer) + sizeof(T_kmer_cnt)); // +T_kmer_cnt for RLE count result
+        size_t temp_required = max(max(
+            size_t(vram_required * 1.1), 
+            vram_alloc_kmer_cnt * (sizeof(T_kmer) + sizeof(T_kmer_cnt))),
+            skms_stores[i]->tot_size_bytes
+        );
+        temp_d_vec[i].use(temp_required, streams[i]);
+        #endif
+        // *2 for cub sort (cub::DoubleBuffer<int> d_keys(d_key_buf, d_key_alt_buf);)
+        // *1 size(kmer)+ size(T_kmer_cnt) for ResultFilter
+        kmers_d_vec[i].use(vram_required, streams[i]);
+        d_num_runs_out[i].use(sizeof(T_skm_partsize), streams[i]);
     }
-    #endif
+    for (i=0; i<n_streams; i++) {
+        if (skms_stores[i]->tot_size_bytes == 0) continue;
+        cudaStreamSynchronize(streams[i]); // to wait MyDevicePtr.use
+        // cerr<<"S"<<i<<" allocated:"<<kmers_d_vec[i].size<<" require:"<<sizeof(T_kmer)*skms_stores[i]->kmer_cnt+skms_stores[i]->tot_size_bytes <<endl;
+        #ifndef LONGERKMER
+        Extract_Kmers(*skms_stores[i], k, 
+            reinterpret_cast<u_char*>((static_cast<T_kmer*>(kmers_d_vec[i].ptr))+skms_stores[i]->kmer_cnt), 
+            static_cast<T_kmer*>(kmers_d_vec[i].ptr), 
+            streams[i], gpars.BpG2, gpars.TpB2);
+        #else
+        Extract_Kmers(*skms_stores[i], k, 
+            static_cast<u_char*>(temp_d_vec[i].ptr), 
+            static_cast<T_kmer*>(kmers_d_vec[i].ptr), 
+            streams[i], gpars.BpG2, gpars.TpB2);
+        #endif
+    }
 
-    #ifdef GPU_EXTRACT_TIMING
-    float time1, time2, time_ratio = 0;
+    // ---- Count K-mers ----
+    #ifndef LONGERKMER
+    vector<cub::DoubleBuffer<T_kmer>> d_db_vec(n_streams);
     #endif
     for (i=0; i<n_streams; i++) {
         if (skms_stores[i]->tot_size_bytes == 0) continue;
-        return_value += idx_h_vec[i].size()-1;
-        #ifdef GPU_EXTRACT_TIMING
-        cudaEventElapsedTime(&time1, start[i], mid[i]); cudaEventElapsedTime(&time2, mid[i], stop[i]);
-        time_ratio += time1 / (time1+time2);
+        
+        // CUDA_CHECK(cudaStreamSynchronize(streams[i])); // maybe don't need this?
+        // ---- 1. convert to canonical kmers ---- 
+        canonical_kmer<<<gpars.BpG2, gpars.TpB2, 0, streams[i]>>>(static_cast<T_kmer *>(kmers_d_vec[i].ptr), k, skms_stores[i]->kmer_cnt);
+        // thrust::transform(thrust::device.on(streams[i]), kmers_d_vec[i].begin(), kmers_d_vec[i].end(), ik, kmers_d_vec[i].begin(), canonicalkmer());
+
+        // ---- 2. sort: [ABCBBAC] -> [AABBBCC] (kmers_d) ---- 
+        #ifndef LONGERKMER
+        d_db_vec[i] = cub::DoubleBuffer<T_kmer>(static_cast<T_kmer*>(kmers_d_vec[i].ptr), static_cast<T_kmer*>(kmers_d_vec[i].ptr)+skms_stores[i]->kmer_cnt);
+        CubSort_db(d_db_vec[i], temp_d_vec[i], k, skms_stores[i]->kmer_cnt, streams[i]);
+        // after sorting, kmers_d_vec = (N*T_kmer) {sorted kmers...}/{temp}, (N*T_kmer) {temp}/{sorted kmers...}
+        #else
+        CubMergeSort(static_cast<T_kmer*>(kmers_d_vec[i].ptr), temp_d_vec[i], skms_stores[i]->kmer_cnt, streams[i]);
+        // after sorting, kmers_d_vec = (N*T_kmer) {sorted kmers...}
         #endif
     }
-    #ifdef GPU_EXTRACT_TIMING
-    time_ratio /= (float)n_streams;
-    #endif
-    for (i=0; i<n_streams; i++) {
-        // skms_stores[i]->clear_skm_data();
-        delete skms_stores[i];//
-    }
-    logger->log(logs+" "+to_string(return_value)
-    #ifdef GPU_EXTRACT_TIMING
-    +" "+to_string(time_ratio)
-    #endif
-    , Logger::LV_DEBUG);
 
-    #ifdef P2TIMING
-    // cerr<<"wct3: "<<wct3.stop(true)<<endl;
-    debug_time3 += wct3.stop(true);
-    #endif
+    vector<T_skm_partsize> N_kmer_cleared(n_streams);
+    vector<T_kmer*> d_unique_kmers(n_streams);
+    vector<T_kmer_cnt*> d_counts(n_streams);
+    for (i=0; i<n_streams; i++) {
+        if (skms_stores[i]->tot_size_bytes == 0) continue;
+        CUDA_CHECK(cudaStreamSynchronize(streams[i])); // to wait CubSort_db (d_db)
+
+        // ---- 3. CUB RLE: [AABBBCC] -> [ABC] [232] ----
+        #ifndef LONGERKMER
+        d_unique_kmers[i] = d_db_vec[i].Current();
+        d_counts[i] = reinterpret_cast<T_kmer_cnt*>(d_db_vec[i].Alternate());
+        
+        // aaaaaaaaaaaa
+        // print first and last kmer to check if sorting is corrects
+        // T_kmer first_kmer, last_kmer;
+        // cudaMemcpyAsync(&first_kmer, d_unique_kmers[i], sizeof(T_kmer), cudaMemcpyDeviceToHost, streams[i]);
+        // cudaMemcpyAsync(&last_kmer, d_unique_kmers[i]+skms_stores[i]->kmer_cnt-1, sizeof(T_kmer), cudaMemcpyDeviceToHost, streams[i]);
+        // cudaStreamSynchronize(streams[i]);
+        // logger->log("S"+to_string(i)+" Part "+to_string(skms_stores[i]->id)+" KMER "+to_string(first_kmer)+", "+to_string(last_kmer));
+
+        #else
+        d_unique_kmers[i] = static_cast<T_kmer*>(kmers_d_vec[i].ptr);
+        d_counts[i] = reinterpret_cast<T_kmer_cnt*>(static_cast<T_kmer*>(kmers_d_vec[i].ptr) + skms_stores[i]->kmer_cnt);
+        #endif
+        CubRLE(skms_stores[i]->kmer_cnt, 
+            d_unique_kmers[i], 
+            d_counts[i], 
+            static_cast<T_skm_partsize*>(d_num_runs_out[i].ptr), 
+            temp_d_vec[i], 
+            streams[i]
+        );
+
+        CUDA_CHECK(cudaMemcpyAsync(&N_kmer_cleared[i], d_num_runs_out[i].ptr, sizeof(T_skm_partsize), cudaMemcpyDeviceToHost, streams[i]));
+    }
+
+    // ---- Filter out low/high abundance kmers ----
+    for (i=0; i<n_streams; i++) {
+        if (skms_stores[i]->tot_size_bytes == 0) continue;
+        CUDA_CHECK(cudaStreamSynchronize(streams[i])); // for N_kmer_cleared[i]
+        
+        // ---- 4. Filter out low/high abundance kmers ----
+        skms_stores[i]->clear_skm_data();
+        logger->log("S"+to_string(i)+" Part "+to_string(skms_stores[i]->id)+" "+to_string(N_kmer_cleared[i])+"/"+to_string(skms_stores[i]->kmer_cnt));
+        ClearLowHighAbundance<<<gpars.BpG2, gpars.TpB2, 0, streams[i]>>>(d_counts[i], N_kmer_cleared[i], kmer_min_freq, kmer_max_freq);
+        FilterOutKmers(d_counts[i], d_unique_kmers[i], N_kmer_cleared[i], static_cast<T_skm_partsize*>(d_num_runs_out[i].ptr), temp_d_vec[i], streams[i]);
+        CUDA_CHECK(cudaMemcpyAsync(&N_kmer_cleared[i], d_num_runs_out[i].ptr, sizeof(T_skm_partsize), cudaMemcpyDeviceToHost, streams[i]));
+    }
+
+    // ---- Copy results to host ----
+    size_t return_value = 0;
+    T_kmer *h_distinct_kmer;
+    T_kmer_cnt *h_counts;
+    for (i=0; i<n_streams; i++) {
+        if (skms_stores[i]->tot_size_bytes == 0) continue;
+        CUDA_CHECK(cudaStreamSynchronize(streams[i])); // for N_kmer_cleared[i]
+        
+        // ---- 5. Copy results to host ----
+        return_value += N_kmer_cleared[i];
+        if (result_file_prefix.length() > 1) { // output to file, can be optimized with better pipelining
+            h_distinct_kmer = new T_kmer[N_kmer_cleared[i]];
+            h_counts = new T_kmer_cnt[N_kmer_cleared[i]];
+            CUDA_CHECK(cudaMemcpy(h_distinct_kmer, d_unique_kmers[i], N_kmer_cleared[i]*sizeof(T_kmer), cudaMemcpyDeviceToHost));
+            CUDA_CHECK(cudaMemcpy(h_counts, d_counts[i], N_kmer_cleared[i]*sizeof(T_kmer_cnt), cudaMemcpyDeviceToHost));
+            int part_idx = skms_stores[i]->id;
+            T_skm_partsize distinct_kmer_cnt = N_kmer_cleared[i];
+            std::async([h_distinct_kmer, h_counts, part_idx, result_file_prefix, distinct_kmer_cnt](){
+                FILE *fp = fopen((result_file_prefix + std::to_string(part_idx) + ".gkc").c_str(), "w");
+                assert(fp != NULL);
+                fwrite(&distinct_kmer_cnt, sizeof(T_skm_partsize), 1, fp);
+                fwrite(h_distinct_kmer, sizeof(T_kmer), distinct_kmer_cnt, fp);
+                fwrite(h_counts, sizeof(T_kmer_cnt), distinct_kmer_cnt, fp);
+                fclose(fp);
+                delete[] h_distinct_kmer;
+                delete[] h_counts;
+            }); // std::launch::async,
+        }
+        // for comparison:
+        // kmers_d_vec[i].free(streams[i]);
+        // temp_d_vec[i].free(streams[i]);
+        // d_num_runs_out[i].free(streams[i]);
+        CUDA_CHECK(cudaStreamDestroy(streams[i]));
+    }
 
     return return_value; // total distinct kmer
+}
+
+__host__ size_t GPUVram(int did) {
+    size_t avail, total;
+    cudaMemGetInfo(&avail, &total);
+    return avail;
 }

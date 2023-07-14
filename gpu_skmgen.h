@@ -5,6 +5,9 @@
 if((call) != cudaSuccess) { \
     cudaError_t err = cudaGetLastError(); \
     std::cerr << "CUDA error calling \""#call"\", code is " << err << ": " << cudaGetErrorString(err) << std::endl; \
+    size_t avail, total; \
+    cudaMemGetInfo(&avail, &total); \
+    cerr << "Available memory: " << avail/1048576 << " Total memory: " << total/1048576 << endl; \
     exit(1); \
 }
 
@@ -43,18 +46,14 @@ public:
 
 
 // host/global functions
-enum CountTask {SKMPartition, SKMPartWithPos, StoreMinimizerPos}; // 正常kmc, wtdbg2的kmc, minimap2的minimizer查找
-
-// void CalcSKMPartSize_instream (T_read_cnt reads_cnt, T_read_len *superkmer_offs, 
-//     T_CSR_cap *reads_offs, T_minimizer *minimizers, 
-//     int n_partitions, int k, atomic<size_t> part_sizes[]);
+// enum CountTask {SKMPartition, SKMPartWithPos, StoreMinimizerPos}; // 正常kmc, wtdbg2的kmc, minimap2的minimizer查找
 
 size_t GPUReset (int did);
 
 void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
-    const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars, CountTask task,
+    const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars,
     const int SKM_partitions, std::vector<SKMStoreNoncon*> skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
-    int tid
+    int tid, int gpuid
     /*atomic<size_t> skm_part_sizes[]*/);
 
 #endif

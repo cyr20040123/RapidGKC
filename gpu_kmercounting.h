@@ -14,8 +14,10 @@
 size_t kmc_counting_GPU_streams (T_kvalue k,
     std::vector<SKMStoreNoncon*> skms_stores, CUDAParams &gpars,
     T_kmer_cnt kmer_min_freq, T_kmer_cnt kmer_max_freq,
-    _out_ std::vector<T_kmc> kmc_result_curthread [], int gpuid, int tid);
+    string result_file_prefix, size_t avg_kmer_cnt, int gpuid, int tid);
 
 // u_char* load_SKM_from_file (SKMStoreNoncon &skms_store);
+
+size_t GPUVram(int did);
 
 #endif

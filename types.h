@@ -79,11 +79,11 @@ struct T_d_data {
     _in_ _out_ T_read_len *d_read_len;  // len == len(d_read_offs)  int
     
     // HPC reads info
-    T_read_len *d_hpc_orig_pos;         // len == len(d_reads)      size_t  base original pos **in a read** (not in CSR)
+    // T_read_len *d_hpc_orig_pos;         // len == len(d_reads)      size_t  base original pos **in a read** (not in CSR)
     
     // Minimizers
     _out_ T_minimizer *d_minimizers;    // len == len(d_reads)      size_t
-    _out_ T_read_len *d_superkmer_offs; // len == len(d_reads)      int     supermer_offs **in a read**
+    _out_ T_read_len *d_skm_offs; // len == len(d_reads)      int     supermer_offs **in a read**
     // (for minimizer counting, not used now):
     _out_ T_kvalue *d_mm_pos;           // len == len(d_reads)      u_char  minimizer position in each window
     _out_ char *d_mm_strand;            // len == len(d_reads)      char    0 for forward, 1 for reverse complement, -1 for f==rc
@@ -94,7 +94,7 @@ struct T_d_data {
     T_skm_partsize *d_kmer_cnt;         // len == SKM_part          ull     kmer count of each partition, for kmer extraction memory allocation
     T_skm_partsize *d_store_pos;        // len == SKM_part          size_t  offs to store SKM in a partition of d_skm_store_csr
     u_char *d_skm_store_csr;             // len == * part_size[p]    
-    T_CSR_cap *d_skmpart_offs;          // len == * skm_cnt[p]      
+    T_skm_partsize *d_skmpart_offs;          // len == * skm_cnt[p]      
 };
 
 

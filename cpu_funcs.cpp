@@ -621,10 +621,12 @@ size_t KmerCountingCPU(T_kvalue k,
 
     for (i=1; i<skms_store->kmer_cnt; i++) {
         if (kmers[i] != kmers[i-1]) {
-            distinct_kmers++;
-            // [SAVE] cur_kmer: cur_cnt
-            // cerr<<cur_kmer<<": "<<cur_cnt<<endl;
-            // if (cur_cnt>1) fprintf(fp, "%llu %llu\n", cur_kmer, cur_cnt);
+            if (cur_cnt >= kmer_min_freq && cur_cnt <= kmer_max_freq) {
+                distinct_kmers++;
+                // [SAVE] cur_kmer: cur_cnt
+                // cerr<<cur_kmer<<": "<<cur_cnt<<endl;
+                // if (cur_cnt>1) fprintf(fp, "%llu %llu\n", cur_kmer, cur_cnt);
+            }
             validation_cnt += cur_cnt;
             cur_cnt = 0;
             cur_kmer = kmers[i];
@@ -667,11 +669,6 @@ int main() {
     printf("\n");
     read_compression((u_char*)a, strlen(a));
 
-
-    // u_char b[100];
-    // memset(b,0,sizeof(b));
-    // _hpc_encoding(strlen(a), a, b);
-    // printf("%s\n",b);
     return 0;
 }
 #endif

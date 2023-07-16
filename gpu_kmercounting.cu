@@ -404,16 +404,18 @@ __host__ size_t kmc_counting_GPU_streams (T_kvalue k,
     }
 
     // ---- Filter out low/high abundance kmers ----
-    for (i=0; i<n_streams; i++) {
-        if (skms_stores[i]->tot_size_bytes == 0) continue;
-        CUDA_CHECK(cudaStreamSynchronize(streams[i])); // for N_kmer_cleared[i]
-        
-        // ---- 4. Filter out low/high abundance kmers ----
-        skms_stores[i]->clear_skm_data();
-        logger->log("S"+to_string(i)+" Part "+to_string(skms_stores[i]->id)+" "+to_string(N_kmer_cleared[i])+"/"+to_string(skms_stores[i]->kmer_cnt));
-        ClearLowHighAbundance<<<gpars.BpG2, gpars.TpB2, 0, streams[i]>>>(d_counts[i], N_kmer_cleared[i], kmer_min_freq, kmer_max_freq);
-        FilterOutKmers(d_counts[i], d_unique_kmers[i], N_kmer_cleared[i], static_cast<T_skm_partsize*>(d_num_runs_out[i].ptr), temp_d_vec[i], streams[i]);
-        CUDA_CHECK(cudaMemcpyAsync(&N_kmer_cleared[i], d_num_runs_out[i].ptr, sizeof(T_skm_partsize), cudaMemcpyDeviceToHost, streams[i]));
+    if (kmer_min_freq>1 || kmer_max_freq<INT_MAX){
+        for (i=0; i<n_streams; i++) {
+            if (skms_stores[i]->tot_size_bytes == 0) continue;
+            CUDA_CHECK(cudaStreamSynchronize(streams[i])); // for N_kmer_cleared[i]
+            
+            // ---- 4. Filter out low/high abundance kmers ----
+            skms_stores[i]->clear_skm_data();
+            logger->log("S"+to_string(i)+" Part "+to_string(skms_stores[i]->id)+" "+to_string(N_kmer_cleared[i])+"/"+to_string(skms_stores[i]->kmer_cnt));
+            ClearLowHighAbundance<<<gpars.BpG2, gpars.TpB2, 0, streams[i]>>>(d_counts[i], N_kmer_cleared[i], kmer_min_freq, kmer_max_freq);
+            FilterOutKmers(d_counts[i], d_unique_kmers[i], N_kmer_cleared[i], static_cast<T_skm_partsize*>(d_num_runs_out[i].ptr), temp_d_vec[i], streams[i]);
+            CUDA_CHECK(cudaMemcpyAsync(&N_kmer_cleared[i], d_num_runs_out[i].ptr, sizeof(T_skm_partsize), cudaMemcpyDeviceToHost, streams[i]));
+        }
     }
 
     // ---- Copy results to host ----

@@ -112,7 +112,9 @@ private:
         char *buf = new char [_buffer_size];//
         size_t cur_size;
         char tmp;
-        for (std::string &filename: _filenames) {
+        // for (std::string &filename: _filenames) {
+        for (int i=0; i<_filenames.size(); i++) {
+            std::string filename = _filenames[i];
             FILE *fp = fopen(filename.c_str(), "rb");
             // std::cerr<<"Open file ["<<filename<<"]: "<<fp<<std::endl;
             while (true) {
@@ -130,7 +132,7 @@ private:
             output_wait();
             #endif
             _DBQ.push(t); // push a null block when file ends
-            std::cerr<<"          ["<<filename<<"] closed: "<<fclose(fp)<<std::endl;
+            std::cerr<<"  ("<<i+1<<"/"<<_filenames.size()<<")\t["<<filename<<"] closed: "<<fclose(fp)<<std::endl;
         }
         _DBQ.finish();
         std::cout<<"Loader finish 1 "/*<<push_cnt*/<<std::endl;

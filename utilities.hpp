@@ -208,7 +208,7 @@ public:
 // ====================================================
 // ================ CLASS GlobalParams ================
 // ====================================================
-extern class GlobalParams {
+class GlobalParams {
 public:
     T_kvalue K_kmer = 21;   // length of kmer
     T_kvalue P_minimizer = 7;
@@ -319,7 +319,8 @@ public:
         #endif
         
     }
-} PAR;
+};
+extern GlobalParams PAR;
 // ** Implementation **
 // void GlobalParams::ArgParser(int argc, char* argvs[])
 

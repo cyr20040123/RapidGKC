@@ -162,7 +162,7 @@ void KmerCounting_TP(CUDAParams &gpars) {
     WallClockTimer wct2;
     
     vector<T_kmc> kmc_result[PAR.SKM_partitions];
-    int max_streams = PAR.n_streams_p2;
+    int max_streams_p2 = PAR.n_streams_p2;
     PAR.N_threads = PAR.threads_p2;
     int n_workers_tp = PAR.max_threads_per_gpu_p2 * PAR.n_devices + (PAR.threads_p2 - PAR.max_threads_per_gpu_p2*PAR.n_devices)/PAR.threads_cpu_sorter;
     
@@ -177,7 +177,7 @@ void KmerCounting_TP(CUDAParams &gpars) {
         long long vram_avail = gpars.vram[0] / max(1, PAR.max_threads_per_gpu_p2); // vram available for each GPU worker (1 GPU worker = 1 CPU thread)
         vector<SKMStoreNoncon*> store_vec;
         // group a batch of skm partitions for GPU:
-        for (j = i; j < i+max_streams && j < PAR.SKM_partitions; j++) {
+        for (j = i; j < i+max_streams_p2 && j < PAR.SKM_partitions; j++) {
             size_t vram_required = max((size_t)(skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) * 2.1), skm_part_vec[j]->kmer_cnt * (sizeof(T_kmer) + sizeof(T_kmer_cnt)*2)); // sync calc with gpu_kmercounting.cu
             vram_required += 128 * MB1;
             if (vram_avail - vram_required > 0.1 * gpars.vram[0]) {

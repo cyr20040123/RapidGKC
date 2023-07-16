@@ -30,7 +30,7 @@ if(CUDA_VERSION VERSION_LESS CUDA_VERSION_MINIMUM)
   message(FATAL_ERROR "Minimum CUDA version requirement: ${CUDA_VERSION_MINIMUM}, but found current version: ${CUDA_VERSION}.")
 endif()
 # ** Set CUDA Arch **
-set(CMAKE_CUDA_ARCHITECTURES 80 86 87)
+set(CMAKE_CUDA_ARCHITECTURES "native")
 
 # ** Add Include Path **
 include_directories(${PROJECT_SOURCE_DIR})

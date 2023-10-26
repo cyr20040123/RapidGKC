@@ -52,8 +52,22 @@ size_t GPUReset (int did);
 
 void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
     const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars,
-    const int SKM_partitions, std::vector<SKMStoreNoncon*> skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
+    const int SKM_partitions, std::vector<SKMStoreNoncon*> &skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
     int tid, int gpuid
     /*atomic<size_t> skm_part_sizes[]*/);
 
+void GenMMHistoGPU (PinnedCSR &pinned_reads, 
+    const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars, int tid, int gpuid);
+
+class DevMMHisto {
+public:
+    bool is_init = false;
+    unsigned long long *d_mmhisto;
+    // unsigned int *d_mm_dict;
+    DevMMHisto() = delete;
+    DevMMHisto(T_kvalue p, int gpuid);
+    // ~DevMMHisto();
+    unsigned long long* CopyToHost(T_kvalue p, int gpuid);
+};
+void CopyDictToDevice(unsigned int *dict, T_kvalue p, int gpuid);
 #endif

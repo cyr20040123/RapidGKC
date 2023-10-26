@@ -144,6 +144,107 @@ void _get_mm_of_kmer (u_char* read, T_read_len i, const T_kvalue P_minimizer, co
     mm_beg += i;
     return;
 }
+
+// ==== For MM Histogram ====
+std::atomic<unsigned long long> mm_histo[1<<22];    // CPU minimizer histogram counter
+unsigned int *mm_dict;                              // CPU minimizer-PID dictionary
+unsigned long long *all_histo;                      // CPU+GPU minimizer histogram for printing to file
+unsigned int* GenDict(unsigned int parts, T_kvalue p, int samplereads, std::atomic<unsigned long long>* mm_histo_h=nullptr, unsigned long long **mm_histo_d=nullptr, int n_devices=0) {
+    unsigned int* out_dict = new unsigned int[1<<(p*2)];
+    if (samplereads < 1000) {
+        logger->log("Use hash value of minimizer to determine the partition ID.", Logger::LV_WARNING);
+        for (T_minimizer i=0; i<(1<<(p*2)); i++) out_dict[i] = (~i) % parts;
+        return out_dict;
+    }
+    all_histo = new unsigned long long[1<<(p*2)];
+    memset(all_histo, 0, sizeof(unsigned long long) * (1<<(p*2)));
+    unsigned long long sum = 0;
+    for (T_minimizer i=0; i<(1<<(p*2)); i++) {
+        all_histo[i] += mm_histo_h[i];
+        for (int j=0; j<n_devices; j++) {
+            all_histo[i] += mm_histo_d[j][i];
+        }
+        sum += all_histo[i];
+    }
+    unsigned long long thr = sum / parts;
+    unsigned long long tmp_sum = 0;
+    unsigned int i_part = 0;
+    unsigned int part_size;
+    for (T_minimizer i=0; i<(1<<(p*2)); i++) {
+        tmp_sum += all_histo[i];
+        out_dict[i] = i_part;
+        part_size++;
+        if (tmp_sum >= thr && i_part < parts-1) {
+            if (tmp_sum > 2*thr && part_size > 1) {
+                out_dict[i] = ++i_part;
+                tmp_sum -= thr;
+            }
+            tmp_sum -= thr;
+            ++i_part;
+            part_size = 0;
+        }
+    }
+    for (int i=0; i<n_devices; i++) delete mm_histo_d[i];
+    return out_dict;
+}
+
+void CalcMMHisto(vector<ReadPtr> &reads, CUDAParams &gpars, int tid) {
+// void CalcMMHisto(u_char* read, T_read_len len, const T_kvalue K_kmer, const T_kvalue P_minimizer) {
+    T_kvalue K_kmer = PAR.K_kmer;
+    T_kvalue P_minimizer = PAR.P_minimizer;
+
+    for (ReadPtr &_read: reads) {
+        u_char* read = (u_char*)(_read.read);
+        T_read_len len = _read.len;    
+        if (PAR.HPC) len = _hpc_encoding(len, _read.read, read);
+        
+        T_minimizer cur_mm, mm;
+        T_minimizer pmer, pmer_rc;
+        T_minimizer mm_mask = T_MM_MAX >> (sizeof(T_minimizer)*8 - 2*P_minimizer);
+        int i, j;
+        T_read_len skm_begin_pos = 0, skm_cnt = 0;
+        int mm_beg = -1;
+        
+        // -- Generate the first k-mer's minimizer --
+        _get_mm_of_kmer (read, 0, P_minimizer, K_kmer, mm_mask, mm, pmer, pmer_rc, mm_beg); // get mm pmer pmer_rc mm_beg
+        cur_mm = mm;
+        
+        for (i=1; i<=len-K_kmer; i++) { // i: k-mer ID
+            if (mm_beg < i) {
+                _get_mm_of_kmer (read, i, P_minimizer, K_kmer, mm_mask, mm, pmer, pmer_rc, mm_beg);
+                if (mm != cur_mm) {
+                    // find new skm, save the previous index
+                    mm_histo[cur_mm].fetch_add(i-skm_begin_pos);
+                    skm_cnt++;
+                    skm_begin_pos = i;
+                    cur_mm = mm;
+                }
+            } else {
+                j = i+K_kmer-1; // the last base of the current k-mer
+                pmer = ((pmer << 2) | basemap[*(read+j)]) & mm_mask;
+                pmer_rc = (pmer_rc >> 2) | (basemap_compl[*(read+j)] << (P_minimizer*2-2));
+                if (_filter_and_assign_mm (mm, pmer, pmer_rc, P_minimizer, mm_mask)) {
+                    mm_beg = j-P_minimizer+1;
+                    if (mm < cur_mm) {
+                        if (mm_beg + P_minimizer - K_kmer > skm_begin_pos) {
+                            // mm can't reach the first k-mer in skm and is different from the previous
+                            // find new skm
+                            mm_histo[cur_mm].fetch_add(i-skm_begin_pos);
+                            skm_cnt++;
+                            skm_begin_pos = i;
+                        }
+                        cur_mm = mm;
+                    }
+                }
+            }
+        }
+        // last skm
+        mm_histo[cur_mm].fetch_add(len-K_kmer+1-skm_begin_pos);
+        skm_cnt++;
+    }
+}
+// ==== end of MM Histogram ====
+
 T_read_len gen_skm_offs(u_char* read, T_read_len len, const T_kvalue K_kmer, const T_kvalue P_minimizer, _out_ T_read_len *skm_offs, _out_ T_minimizer *minimizers) {
     T_minimizer cur_mm, mm;
     T_minimizer pmer, pmer_rc;
@@ -160,11 +261,11 @@ T_read_len gen_skm_offs(u_char* read, T_read_len len, const T_kvalue K_kmer, con
         if (mm_beg < i) {
             _get_mm_of_kmer (read, i, P_minimizer, K_kmer, mm_mask, mm, pmer, pmer_rc, mm_beg);
             if (mm != cur_mm) {
-                // find skm, save the previous index
+                // find new skm, save the previous index
                 skm_offs[skm_cnt] = skm_begin_pos;
                 minimizers[skm_cnt] = cur_mm;
                 skm_cnt++;
-                
+
                 skm_begin_pos = i;
                 cur_mm = mm;
             }
@@ -177,7 +278,7 @@ T_read_len gen_skm_offs(u_char* read, T_read_len len, const T_kvalue K_kmer, con
                 if (mm < cur_mm) {
                     if (mm_beg + P_minimizer - K_kmer > skm_begin_pos) {
                         // mm can't reach the first k-mer in skm and is different from the previous
-                        // <find skm>
+                        // find new skm
                         skm_offs[skm_cnt] = skm_begin_pos;
                         minimizers[skm_cnt] = cur_mm;
                         skm_cnt++;
@@ -189,6 +290,7 @@ T_read_len gen_skm_offs(u_char* read, T_read_len len, const T_kvalue K_kmer, con
             }
         }
     }
+    // last skm
     skm_offs[skm_cnt] = skm_begin_pos;
     minimizers[skm_cnt] = cur_mm;
     skm_cnt++;
@@ -210,9 +312,15 @@ void read_compression (u_char *read, T_read_len len) {
     }
 }
 
+#ifdef DEBUG_HASHPID // use this flag to compare between pre-calc dict and mod calculation
 inline int _hash_partition (T_minimizer mm, int SKM_partitions) {
     return (~mm) % SKM_partitions;
 }
+#else
+inline int _hash_partition (T_minimizer mm, int SKM_partitions) {
+    return mm_dict[mm];
+}
+#endif
 inline T_skm_len _skm_bytes_required (T_read_len beg, T_read_len end, int k) {
     return ((beg%3) + end+(k-1)-beg + 3) / 3; // +3 because skm_3x requires an extra empty byte
 }
@@ -235,6 +343,7 @@ void gen_skms (u_char *read, T_read_len len, T_read_len *skm_offs, T_minimizer *
             skm_cnt[partition] = 0;
             kmer_cnt[partition] = 0;
         }
+        // cerr<<i<<"/"<<n_skms<<" "<<partition<<" {"<< skm_buf_pos[partition] << "," << skm_offs[i]/BYTE_BASES << "/" << len << "," << skm_size_bytes << "}" << endl;
         memcpy(&(skm_buffer[partition][skm_buf_pos[partition]]), &(read[skm_offs[i]/BYTE_BASES]), skm_size_bytes);
         // process the first byte
         skm_buffer[partition][skm_buf_pos[partition]] &= 0b00111111;
@@ -273,7 +382,7 @@ void GenSuperkmerCPU (vector<ReadPtr> &reads,
         // u_char *read = new u_char[len];//
         u_char *read = (u_char*)_read.read;
         if (HPC) len = _hpc_encoding(len, _read.read, read);
-        else memcpy(read, _read.read, len);
+        // else memcpy(read, _read.read, len);
         // Gen SKM offs:
         T_read_len *skm_offs = new T_read_len[len];//
         T_minimizer *minimizers = new T_minimizer[len];//
@@ -292,9 +401,9 @@ void GenSuperkmerCPU (vector<ReadPtr> &reads,
     
     // dump skm buffer to store
     for (i=0; i<SKM_partitions; i++)
-        SKMStoreNoncon::save_skms(skm_partition_stores[i], skm_cnt[i], kmer_cnt[i], skm_buffer[i], skm_buf_pos[i], SKM_BUFFER_SIZE, true);//
+        SKMStoreNoncon::save_skms(skm_partition_stores[i], skm_cnt[i], kmer_cnt[i], skm_buffer[i], skm_buf_pos[i], SKM_BUFFER_SIZE, false);//
         // delete skm_buffer[i]; // No need to delete here. The right is passed to func save_skms.
-    logger->log("-- BATCH  CPU (T"+to_string(tid)+"): #reads: "+to_string(reads.size())+" --  "+to_string(wct.stop()));
+    // logger->log("-- BATCH  CPU (T"+to_string(tid)+"): #reads: "+to_string(reads.size())+" --  "+to_string(wct.stop()));
 }
 
 /**
@@ -579,7 +688,18 @@ void extract_kmers_cpu (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* km
         if (t.joinable()) t.join();
     // delete thread_offs;
 
-    delete [] skms;//
+    if (skms_store.to_file) {
+        #ifdef MMAP
+        if (skms_store.mmap_success)
+            munmap(skms, skms_store.tot_size_bytes);
+        else
+            delete [] skms;//
+        #else
+        delete [] skms;//
+        #endif
+    } else {
+        delete [] skms;//
+    }
     assert(kmer_store_pos == skms_store.kmer_cnt);
 }
 

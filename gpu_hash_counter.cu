@@ -601,6 +601,22 @@ __global__ void GPU_Extract_Kmers (u_char* d_skms, size_t tot_bytes, T_kmer *d_k
     return;
 }
 
+#ifdef MMAP
+__host__ u_char* load_SKM_from_file (SKMStoreNoncon &skms_store) {
+    u_char* d_skms;
+    CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes));
+    // load from file with mmap
+    int fd = open(skms_store.filename.c_str(), O_RDONLY);
+    assert(fd!=-1);
+    u_char* tmp;
+    tmp = (u_char*) mmap(NULL, skms_store.tot_size_bytes, PROT_READ, MAP_PRIVATE, fd, 0);
+    assert(tmp!=MAP_FAILED);
+    CUDA_CHECK(cudaMemcpy(d_skms, tmp, skms_store.tot_size_bytes, cudaMemcpyHostToDevice));
+    munmap(tmp, skms_store.tot_size_bytes);
+    close(fd);
+    return d_skms;
+}
+#else
 __host__ u_char* load_SKM_from_file (SKMStoreNoncon &skms_store) {
     u_char* d_skms;
     CUDA_CHECK(cudaMalloc((void**) &(d_skms), skms_store.tot_size_bytes));
@@ -615,6 +631,7 @@ __host__ u_char* load_SKM_from_file (SKMStoreNoncon &skms_store) {
     fclose(fp);
     return d_skms;
 }
+#endif
 
 void Extract_Kmers (SKMStoreNoncon &skms_store, T_kvalue k, _out_ T_kmer* &d_kmers, cudaStream_t &stream, int BpG2=8, int TpB2=256) {
     

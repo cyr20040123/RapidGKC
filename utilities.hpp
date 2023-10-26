@@ -248,6 +248,9 @@ public:
     bool GPU_only = false;
     // bool check_VRAM = false;
 
+    int MM_histo = 81920;
+    static const int MAX_STREAMS = 16;
+
     // bool GPU_compression = false;
 
     void ArgParser(int argc, char* argvs[]) {
@@ -282,6 +285,7 @@ public:
             // else if (!strcmp(argvs[i], "-checkvram")) check_VRAM = true;
             else if (!strcmp(argvs[i], "-log")) log_file_folder = std::string(argvs[++i]);
             else if (!strcmp(argvs[i], "-lv")) log_lv = atoi(argvs[++i]);
+            else if (!strcmp(argvs[i], "-mmhisto")) MM_histo = atoi(argvs[++i]);
             else if (!strcmp(argvs[i], "-read")) {
                 int j;
                 for (j=i+1; j<argc; j++, i++) {
@@ -303,6 +307,9 @@ public:
             tmp_file_folder.push_back('/');
         if (*log_file_folder.rbegin() != '/')
             log_file_folder.push_back('/');
+        assert (P_minimizer <= 11);
+        assert (n_streams <= MAX_STREAMS);
+        assert (n_streams_p2 <= MAX_STREAMS);
         assert (!(GPU_only && !n_devices));
         assert (!(GPU_only && CPU_only));
         assert (max_threads_per_gpu);

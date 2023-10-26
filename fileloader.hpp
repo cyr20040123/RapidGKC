@@ -13,6 +13,9 @@
 #include "types.h"
 #include "thread_pool.hpp"
 
+#include "gpu_skmgen.h"
+#include "cpu_funcs.h"
+
 #include "zlib.h"
 
 #ifdef DEBUG
@@ -47,6 +50,28 @@ struct LineBuffer {
     std::vector<ReadLine> readline_vec;
     /* std::vector<char*> newline_vec2;*/
 };
+
+void GenMMDict() {
+    // calc mm dict from mm histogram
+    extern DevMMHisto *dev_mm_histo[];
+    extern std::atomic<unsigned long long> mm_histo[];
+    unsigned long long *histo_gpu[PAR.n_devices];
+    for (int igpu = 0; igpu < PAR.n_devices; ++igpu) {
+        if (dev_mm_histo[igpu] == NULL) {
+            histo_gpu[igpu] = new unsigned long long [1<<(2*PAR.P_minimizer)];
+        } else {
+            histo_gpu[igpu] = dev_mm_histo[igpu]->CopyToHost(PAR.P_minimizer, igpu);
+        }
+    }
+    unsigned int *dict = GenDict(PAR.SKM_partitions, PAR.P_minimizer, PAR.MM_histo, mm_histo, histo_gpu, PAR.n_devices);
+    extern unsigned int *mm_dict;
+    // extern unsigned int *d_mm_dict[];
+    mm_dict = dict;
+    for (int igpu = 0; igpu < PAR.n_devices; ++igpu) {
+        // d_mm_dict[igpu] = 
+        CopyDictToDevice(mm_dict, PAR.P_minimizer, igpu);
+    }
+}
 
 class ReadLoader {
 private:
@@ -491,18 +516,46 @@ public:
         std::cout<<"3 Extract push wait: "<<_RBQ.debug_push_wait<<"\tpop wait: "<<_RBQ.debug_pop_wait<<"\tsize: "<<_RBQ.size_est()<<std::endl;
     }
     #endif
-    static void work_while_loading (T_kvalue K_kmer, std::function<void(std::vector<ReadPtr>&, int)> work_func, int worker_threads, std::vector<std::string> &filenames, 
-    T_read_cnt batch_size, size_t max_buffer_size_MB = 1024, size_t buffer_size_MB = 16) {
+
+    static void work_while_loading (T_kvalue K_kmer, 
+    std::function<void(std::vector<ReadPtr>&, int)> work_func, 
+    std::function<void(std::vector<ReadPtr>&, int)> p0_func, 
+    int worker_threads, std::vector<std::string> &filenames, 
+    T_read_cnt batch_size, size_t max_buffer_size_MB = 1024, size_t buffer_size_MB = 16, T_read_cnt reads_for_mmhisto = 100000) {
         
-        T_read_len n_read_loaded = 0;
+        T_read_cnt n_read_loaded = 0;
 
         // ThreadAffinity ta;
         // if (worker_threads >= 16) ta={1, worker_threads, 0, 2}; // TODO: pass GPU threads
+        ThreadPool<void> tp0(worker_threads, worker_threads);
         ThreadPool<void> tp(worker_threads, worker_threads); // +(worker_threads >= 8 ? worker_threads / 4 : 2));
         ReadLoader rl(filenames, K_kmer, batch_size, buffer_size_MB, max_buffer_size_MB, worker_threads);
         rl.start_load_reads();
 
         std::vector<ReadPtr> read_batch;
+        WallClockTimer wct0;
+        ConcQueue<std::vector<ReadPtr>> unprocessed_reads;
+        T_read_cnt n_reads_p0 = 0;
+        atomic<int> timer_p0{0};
+        while (reads_for_mmhisto && rl._RBQ.pop(read_batch)) {
+            std::vector<ReadPtr> *my_read_batch = new std::vector<ReadPtr>();//
+            n_read_loaded += read_batch.size();
+            n_reads_p0 += read_batch.size();
+            *my_read_batch = std::move(read_batch);
+            tp0.commit_task([my_read_batch, &p0_func, &unprocessed_reads, &timer_p0] (int tid) {
+                WallClockTimer wct;
+                p0_func(*my_read_batch, tid);
+                unprocessed_reads.push(*my_read_batch);
+                timer_p0.fetch_add(wct.stop(true));
+            });
+            if (n_reads_p0 >= reads_for_mmhisto) break;
+        }
+        tp0.finish();
+        unprocessed_reads.finish();
+        GenMMDict();
+        cerr<<"timer_p0_threads: "<<timer_p0<<endl;
+        cerr<<"wct0 all: "<<wct0.stop(true)<<endl;
+
         while (rl._RBQ.pop(read_batch)) {
             // std::cerr<<rl._DBQ.size_est()<<" | "<<rl._LBQ.size_est()<<" | "<<rl._RBQ.size_est()<<std::endl;
             tp.hold_when_busy();
@@ -517,7 +570,20 @@ public:
                 delete my_read_batch;//
             });
         }
-        std::cerr<<"Total reads loaded: "<<n_read_loaded<<std::endl;
+        // process the reads for MM histo calculation
+        while (reads_for_mmhisto && unprocessed_reads.pop(read_batch)) {
+            tp.hold_when_busy();
+            std::vector<ReadPtr> *my_read_batch = new std::vector<ReadPtr>();//
+            *my_read_batch = std::move(read_batch);
+            tp.commit_task([my_read_batch, &work_func] (int tid) {
+                work_func(*my_read_batch, tid);
+                for (ReadPtr &i: *my_read_batch) delete i.read;
+                delete my_read_batch;//
+            });
+        }
+        // std::cerr<<"Total reads loaded: "<<n_read_loaded<<std::endl;
+        std::cerr<<"Total reads loaded: "<<n_read_loaded<<"\tReads for minimizer histogram: "<<n_reads_p0<<std::endl;
+        // logger->log("Total reads loaded: "+std::to_string(n_read_loaded)+"\tReads for minimizer histogram: "+std::to_string(n_reads_p0));
         
         rl.join_threads();
         tp.finish();
@@ -717,12 +783,17 @@ public:
         std::cout<<"3 Extract push wait: "<<_RBQ->debug_push_wait<<"\tpop wait: "<<_RBQ->debug_pop_wait<<"\tsize: "<<_RBQ->size_est()<<std::endl;
     }
     #endif
-    static void work_while_loading_gz (T_kvalue K_kmer, std::function<void(std::vector<ReadPtr>&, int)> work_func, int worker_threads, 
-    std::vector<std::string> &filenames, int loader_threads,
-    T_read_cnt batch_size, size_t max_buffer_size_MB = 1024, size_t buffer_size_MB = 16) {
-        
-        T_read_len n_read_loaded = 0;
 
+    static void work_while_loading_gz (T_kvalue K_kmer, 
+    std::function<void(std::vector<ReadPtr>&, int)> work_func, 
+    std::function<void(std::vector<ReadPtr>&, int)> p0_func, 
+    int worker_threads, 
+    std::vector<std::string> &filenames, int loader_threads,
+    T_read_cnt batch_size, size_t max_buffer_size_MB = 1024, size_t buffer_size_MB = 16, T_read_cnt reads_for_mmhisto = 100000) {
+        
+        T_read_cnt n_read_loaded = 0;
+
+        ThreadPool<void> tp0(worker_threads, worker_threads);
         ThreadPool<void> tp(worker_threads, worker_threads); // +(worker_threads >= 8 ? worker_threads / 4 : 2));
         std::vector<GZReadLoader*> rls;
 
@@ -739,6 +810,23 @@ public:
         }
 
         std::vector<ReadPtr> read_batch;
+        ConcQueue<std::vector<ReadPtr>> unprocessed_reads;
+        T_read_cnt n_reads_p0 = 0;
+        while (outputbatches_queue.pop(read_batch)) {
+            std::vector<ReadPtr> *my_read_batch = new std::vector<ReadPtr>();//
+            n_read_loaded += read_batch.size();
+            n_reads_p0 += read_batch.size();
+            *my_read_batch = std::move(read_batch);
+            tp0.commit_task([my_read_batch, &p0_func, &unprocessed_reads] (int tid) {
+                p0_func(*my_read_batch, tid);
+                unprocessed_reads.push(*my_read_batch);
+            });
+            if (n_read_loaded >= reads_for_mmhisto) break;
+        }
+        tp0.finish();
+        unprocessed_reads.finish();
+        GenMMDict();
+
         while (outputbatches_queue.pop(read_batch)) {
             tp.hold_when_busy();
             n_read_loaded += read_batch.size();
@@ -750,7 +838,21 @@ public:
                 delete my_read_batch;//
             });
         }
-        std::cerr<<"Total reads loaded: "<<n_read_loaded<<std::endl;
+
+        // process the reads for MM histo calculation
+        while (unprocessed_reads.pop(read_batch)) {
+            tp.hold_when_busy();
+            std::vector<ReadPtr> *my_read_batch = new std::vector<ReadPtr>();//
+            *my_read_batch = std::move(read_batch);
+            tp.commit_task([my_read_batch, &work_func] (int tid) {
+                work_func(*my_read_batch, tid);
+                for (ReadPtr &i: *my_read_batch) delete i.read;
+                delete my_read_batch;//
+            });
+        }
+        // std::cerr<<"Total reads loaded: "<<n_read_loaded<<std::endl;
+        std::cerr<<"Total reads loaded: "<<n_read_loaded<<"\tReads for minimizer histogram: "<<n_reads_p0<<std::endl;
+        // logger->log("Total reads loaded: "+std::to_string(n_read_loaded)+"\tReads for minimizer histogram: "+std::to_string(n_reads_p0));
         
         for (int i=0; i<loader_threads; i++) {
             rls[i]->join_threads();

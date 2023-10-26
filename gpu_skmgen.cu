@@ -119,15 +119,26 @@ extern Logger *logger;
     //         *offs_ptr = *(offs_ptr-1) + read.length();
     //     }
     // }
+// std::atomic<int> pinned_create;
+// std::atomic<int> pinned_copy;
+thread_local MyPinnedPtr pinned_ptr_reads;
+thread_local MyPinnedPtr pinned_ptr_read_offs;
+
     PinnedCSR::PinnedCSR(vector<ReadPtr> &reads, bool keep_original/*=true*/) { // for sorting CSR (order the pointers as the sorting result)
+        // WallClockTimer wct;
         this->n_reads = reads.size();
         size_capacity = 0;
         for (const ReadPtr &read_ptr: reads) {
             size_capacity += read_ptr.len;
         } // about cudaHostAlloc https://zhuanlan.zhihu.com/p/188246455
         // cerr<<"Pinned reads = "<<n_reads<<" \ttot_sizes = "<<size_capacity<<" bytes"<<endl;
-        CUDA_CHECK(cudaHostAlloc((void**)(&reads_offs), (this->n_reads+1)*sizeof(T_CSR_cap), cudaHostAllocDefault));
-        CUDA_CHECK(cudaHostAlloc((void**)(&reads_CSR), size_capacity+1, cudaHostAllocDefault));
+        pinned_ptr_reads.use(size_capacity+1, true);
+        pinned_ptr_read_offs.use((this->n_reads+1)*sizeof(T_CSR_cap), true);
+        reads_CSR = (char*)pinned_ptr_reads.ptr;
+        reads_offs = (T_CSR_cap*)pinned_ptr_read_offs.ptr;
+        // CUDA_CHECK(cudaHostAlloc((void**)(&reads_offs), (this->n_reads+1)*sizeof(T_CSR_cap), cudaHostAllocDefault));
+        // CUDA_CHECK(cudaHostAlloc((void**)(&reads_CSR), size_capacity+1, cudaHostAllocDefault));
+        // pinned_create.fetch_add(wct.breakpoint(true));
         char *cur_ptr = reads_CSR;
         T_CSR_cap *offs_ptr = reads_offs;
         *offs_ptr = 0;
@@ -137,10 +148,11 @@ extern Logger *logger;
             offs_ptr++;
             *offs_ptr = *(offs_ptr-1) + read_ptr.len;
         }
+        // pinned_copy.fetch_add(wct.breakpoint(true));
     }
     PinnedCSR::~PinnedCSR() {
-        CUDA_CHECK(cudaFreeHost(reads_offs));
-        CUDA_CHECK(cudaFreeHost(reads_CSR));
+        // CUDA_CHECK(cudaFreeHost(reads_offs));
+        // CUDA_CHECK(cudaFreeHost(reads_CSR));
     }
 
 __global__ void GPU_HPCEncoding (
@@ -274,9 +286,18 @@ __global__ void GPU_GenMinimizer(
     return;
 }
 
+__device__ unsigned int d_mm_dict[1<<22];   // GPU minimizer-PID dictionary (each device will have one copy)
+#ifdef DEBUG_HASHPID
 __device__ __forceinline__ int _hash_partition (T_minimizer mm, int SKM_partitions) {
     return (~mm) % SKM_partitions;
 }
+#else
+__device__ __forceinline__ int _hash_partition (T_minimizer mm, int SKM_partitions) {
+    // int did;
+    // cudaGetDevice(&did);
+    return d_mm_dict[mm];
+}
+#endif
 __device__ inline T_skm_len _skm_bytes_required (T_read_len beg, T_read_len end, int k) {
     return ((beg%3) + end+(k-1)-beg + 3) / 3; // +3 because skm_3x requires an extra empty byte
 }
@@ -497,32 +518,99 @@ __host__ size_t GPUReset(int did) {
     return avail;
 }
 
-#ifdef MMFILTER_TIMING
-extern atomic<int> mm_filter_tot_time;
-#endif
+// == For MM Histo ==
+__global__ void GPU_GenMMtoHisto(
+    _in_ T_read_cnt d_reads_cnt, _in_ T_read_len *d_read_len, 
+    _in_ unsigned char *d_reads, _in_ T_CSR_cap *d_read_offs, 
+    _out_ unsigned long long *d_mmhisto, 
+    const T_kvalue K_kmer, const T_kvalue P_minimizer) {
 
-thread_local vector<MyDevicePtr> vec_d_mmskmreads(PAR.n_streams);   // 9S+8 = 4S (d_minimizers), 4S (d_skm_offs), S+8 (d_reads)
-thread_local vector<MyDevicePtr> vec_d_rlenroffs(PAR.n_streams);    // 12N+8 = 4N (d_read_len), 8N+8 (d_read_offs)
-thread_local vector<MyDevicePtr> vec_d_partinfo(PAR.n_streams);     // 40P+8 = 8P (d_skm_part_bytes), 8P (d_skm_cnt), 8P (d_kmer_cnt), 8P (d_store_pos), 8P+8 (d_skmpart_offs)
-thread_local vector<MyDevicePtr> vec_d_skmpart(PAR.n_streams);      // X (d_skm_store_csr)
-
-// provide pinned_reads from the shortest to the longest read
-__host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
-    const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars,
-    const int SKM_partitions, vector<SKMStoreNoncon*> skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
-    int tid, int gpuid
-    /*atomic<size_t> skm_part_sizes[]*/) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    int n_t = blockDim.x * gridDim.x;
+    int i, j, cur_kmer_i;
+    T_minimizer mm_mask = T_MM_MAX >> (sizeof(T_minimizer)*8 - 2*P_minimizer);
+    T_minimizer mm_set; // selected minimizer
+    T_minimizer mm, new_mm, mm_rc, new_mm_rc; // rc for reverse complement
     
-    #ifdef MMFILTER_TIMING
-    cudaEvent_t start[gpars.n_streams], stop[gpars.n_streams];
-    float time_filter=0, time_filter_stream;
-    #endif
+    bool mm_check; // whether is a legal minimizer/signature (filtered by mm_filter)
 
+    for (i=0; i<d_reads_cnt; i++) {
+        unsigned char *read = &d_reads[d_read_offs[i]]; // current read
+        // T_minimizer *minimizer_saving = &(d_minimizers[d_read_offs[i]]);
+        T_read_len len = d_read_len[i];
+        for (cur_kmer_i=tid; cur_kmer_i <= len-K_kmer; cur_kmer_i+=n_t) { // Coalesced Access
+            // gen the first p-mer:
+            new_mm = 0;
+            for (j = cur_kmer_i; j < cur_kmer_i + P_minimizer; j++) {
+                new_mm = (new_mm << 2) | d_basemap[*(read+j)];
+            }
+            mm_check = mm_filter(new_mm, P_minimizer);
+            mm = new_mm * mm_check + mm_mask * (!mm_check); // if not a minimizer, let it be maximal (no minimizer can be maximal because canonical)
+            
+            // gen the first RC p-mer:
+            new_mm_rc = 0;
+            for (j = cur_kmer_i + P_minimizer - 1; j >= cur_kmer_i; j--) {
+                new_mm_rc = (new_mm_rc << 2) | d_basemap_compl[*(read+j)];
+            }
+            mm_check = mm_filter(new_mm_rc, P_minimizer);
+            mm_rc = new_mm_rc * mm_check + mm_mask * (!mm_check);
+
+            mm_set = (mm_rc < mm) * mm_rc + (mm_rc >= mm) * mm;////////////
+            
+            // gen the next p-mers:
+            for (j = cur_kmer_i + P_minimizer; j < cur_kmer_i + K_kmer; j++) {
+                // gen new minimizers
+                new_mm = ((new_mm << 2) | d_basemap[*(read+j)]) & mm_mask;
+                new_mm_rc = (new_mm_rc >> 2) | (d_basemap_compl[*(read+j)] << (P_minimizer*2-2));
+                // check new minimizers
+                mm_check = mm_filter(new_mm, P_minimizer);
+                mm = new_mm * mm_check + mm * (!mm_check);
+                mm_check = mm_filter(new_mm_rc, P_minimizer);
+                mm_rc = new_mm_rc * mm_check + mm_rc * (!mm_check);
+                // set the best minimizer
+                mm_set = (mm_set < mm) * mm_set + (mm_set >= mm) * mm;
+                mm_set = (mm_set < mm_rc) * mm_set + (mm_set >= mm_rc) * mm_rc;//////////
+            }
+            // minimizer_saving[cur_kmer_i] = mm_set;
+            atomicAdd(&d_mmhisto[mm_set], 1);
+        }
+    }
+    return;
+}
+static const int MAX_GPU_CNT = 8;
+DevMMHisto *dev_mm_histo[MAX_GPU_CNT];  // GPU minimizer histogram counter
+
+    DevMMHisto::DevMMHisto(T_kvalue p, int gpuid) {
+        CUDA_CHECK(cudaSetDevice(gpuid));
+        CUDA_CHECK(cudaMalloc(&d_mmhisto, sizeof(unsigned long long)*(1<<(p*2))));//
+        CUDA_CHECK(cudaMemset(d_mmhisto, 0, sizeof(unsigned long long)*(1<<(p*2))));
+        is_init = true;
+    }
+    unsigned long long* DevMMHisto::CopyToHost(T_kvalue p, int gpuid) {
+        CUDA_CHECK(cudaSetDevice(gpuid));
+        unsigned long long* res = new unsigned long long[1<<(p*2)];
+        CUDA_CHECK(cudaMemcpy(res, d_mmhisto, sizeof(unsigned long long)*(1<<(p*2)), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaFree(d_mmhisto));//
+        return res;
+    }
+
+void CopyDictToDevice(unsigned int *dict, T_kvalue p, int gpuid) {
+    // unsigned int *d_dict;
     CUDA_CHECK(cudaSetDevice(gpuid));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_mm_dict, dict, sizeof(unsigned int)*(1<<(p*2)), 0, cudaMemcpyHostToDevice));
+    // CUDA_CHECK(cudaMalloc(&d_dict, sizeof(unsigned int)*(1<<(p*2))));
+    // CUDA_CHECK(cudaMemcpy(d_dict, dict, sizeof(unsigned int)*(1<<(p*2)), cudaMemcpyHostToDevice));
+    // return d_dict;
+}
+__host__ void GenMMHistoGPU (PinnedCSR &pinned_reads, 
+    const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars, int tid, int gpuid) {
+    CUDA_CHECK(cudaSetDevice(gpuid));
+
+    if (dev_mm_histo[gpuid] == NULL) 
+        dev_mm_histo[gpuid] = new DevMMHisto(P_minimizer, gpuid);
     
     cudaStream_t streams[gpars.n_streams];
     T_d_data gpu_data[gpars.n_streams];
-    T_h_data host_data[gpars.n_streams];
     T_CSR_cap batch_size[gpars.n_streams];      // raw reads size in bytes of the current batch
     T_read_cnt bat_beg_read[gpars.n_streams];
 
@@ -532,11 +620,99 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
     
     T_read_cnt reads_per_stream = gpars.BpG1 * gpars.TpB1 * gpars.items_stream_mul;
     T_read_cnt cur_read = 0, end_read;
-    string logs = "   GPU "+to_string(gpuid)+":";
+
+    // int size_S[gpars.n_streams], size_N[gpars.n_streams], size_P[gpars.n_streams]; //, size_X[gpars.n_streams];
+    
+    while (cur_read < pinned_reads.n_reads) {
+
+        for (i = 0; i < gpars.n_streams && cur_read < pinned_reads.n_reads; i++, cur_read += reads_per_stream) {
+            CUDA_CHECK(cudaStreamSynchronize(streams[i]));
+            bat_beg_read[i] = cur_read;
+            end_read = min(cur_read + reads_per_stream, pinned_reads.n_reads); // the last read in this stream batch
+            gpu_data[i].reads_cnt = end_read-cur_read;
+            batch_size[i] = pinned_reads.reads_offs[end_read] - pinned_reads.reads_offs[cur_read]; // read size in bytes
+            // cerr << "stream " << i << " reads " << gpu_data[i].reads_cnt << " batch_size " << batch_size[i] << endl;
+            
+            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_read_offs), sizeof(T_CSR_cap) * (gpu_data[i].reads_cnt+1), streams[i]));
+            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_reads), sizeof(u_char) * (batch_size[i]+8), streams[i]));
+            CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_read_len), sizeof(T_read_len) * (gpu_data[i].reads_cnt), streams[i]));
+        }
+        started_streams = i;
+        for (i = 0; i < started_streams; i++) {
+            CUDA_CHECK(cudaStreamSynchronize(streams[i]));
+            CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_reads, &(pinned_reads.reads_CSR[pinned_reads.reads_offs[bat_beg_read[i]]]), batch_size[i], cudaMemcpyHostToDevice, streams[i]));
+            CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_read_offs, &(pinned_reads.reads_offs[bat_beg_read[i]]), sizeof(T_CSR_cap) * (gpu_data[i].reads_cnt+1), cudaMemcpyHostToDevice, streams[i]));
+            // ---- GPU gen skm ----
+            MoveOffset<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>>(
+                gpu_data[i].reads_cnt, gpu_data[i].d_read_offs, 0
+            );
+            GPU_HPCEncoding<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>>(
+                gpu_data[i].reads_cnt,  gpu_data[i].d_read_len, 
+                gpu_data[i].d_reads,    gpu_data[i].d_read_offs, 
+                HPC//,                    gpu_data[i].d_hpc_orig_pos
+            );
+            GPU_GenMMtoHisto<<<gpars.BpG1, gpars.TpB1, 0, streams[i]>>>(
+                gpu_data[i].reads_cnt,  gpu_data[i].d_read_len,
+                gpu_data[i].d_reads,    gpu_data[i].d_read_offs,
+                dev_mm_histo[gpuid]->d_mmhisto, K_kmer, P_minimizer
+            );
+            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_read_offs, streams[i]));
+            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_reads, streams[i]));
+            CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_read_len, streams[i]));
+        }
+    }
+    for (i=0; i<gpars.n_streams; i++) {
+        CUDA_CHECK(cudaStreamSynchronize(streams[i]));
+        CUDA_CHECK(cudaStreamDestroy(streams[i]));
+    }
+}
+
+#ifdef MMFILTER_TIMING
+extern atomic<int> mm_filter_tot_time;
+#endif
+
+thread_local vector<MyDevicePtr> vec_d_mmskmreads(PAR.n_streams);   // 9S+8 = 4S (d_minimizers), 4S (d_skm_offs), S+8 (d_reads)
+thread_local vector<MyDevicePtr> vec_d_rlenroffs(PAR.n_streams);    // 12N+8 = 8N+8 (d_read_offs), 4N (d_read_len)
+thread_local vector<MyDevicePtr> vec_d_partinfo(PAR.n_streams);     // 40P+8 = 8P (d_skm_part_bytes), 8P (d_skm_cnt), 8P (d_kmer_cnt), 8P (d_store_pos), 8P+8 (d_skmpart_offs)
+thread_local vector<MyDevicePtr> vec_d_skmpart(PAR.n_streams);      // X (d_skm_store_csr)
+thread_local MyStreams my_streams;                                  // make sure the thread binds to one GPU only!
+
+// std::atomic<int> timep1[5];
+// provide pinned_reads from the shortest to the longest read
+__host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
+    const T_kvalue K_kmer, const T_kvalue P_minimizer, bool HPC, CUDAParams &gpars,
+    const int SKM_partitions, vector<SKMStoreNoncon*> &skm_partition_stores, //std::function<void(T_h_data)> process_func /*must be thread-safe*/,
+    int tid, int gpuid
+    /*atomic<size_t> skm_part_sizes[]*/) {
+    
+    #ifdef MMFILTER_TIMING
+    cudaEvent_t start[gpars.n_streams], stop[gpars.n_streams];
+    float time_filter=0, time_filter_stream;
+    #endif
+
+    // WallClockTimer wct_all;
+    CUDA_CHECK(cudaSetDevice(gpuid));
+    
+    // cudaStream_t streams[gpars.n_streams];
+    T_d_data gpu_data[gpars.n_streams];
+    T_h_data host_data[gpars.n_streams];
+    T_CSR_cap batch_size[gpars.n_streams];      // raw reads size in bytes of the current batch
+    T_read_cnt bat_beg_read[gpars.n_streams];
+
+    int i, started_streams;
+    cudaStream_t *streams = my_streams.streams;
+    my_streams.use(gpars.n_streams);
+    // for (i=0; i<gpars.n_streams; i++)
+    //     CUDA_CHECK(cudaStreamCreate(&streams[i]));
+    
+    T_read_cnt reads_per_stream = gpars.BpG1 * gpars.TpB1 * gpars.items_stream_mul;
+    T_read_cnt cur_read = 0, end_read;
+    // string logs = "   GPU "+to_string(gpuid)+":";
 
     int size_S[gpars.n_streams], size_N[gpars.n_streams], size_P[gpars.n_streams]; //, size_X[gpars.n_streams];
     
     while (cur_read < pinned_reads.n_reads) {
+        // WallClockTimer wct;
 
         for (i = 0; i < gpars.n_streams && cur_read < pinned_reads.n_reads; i++, cur_read += reads_per_stream) {
             // i: which stream
@@ -546,7 +722,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             host_data[i].reads_cnt = gpu_data[i].reads_cnt = end_read-cur_read;
             batch_size[i] = pinned_reads.reads_offs[end_read] - pinned_reads.reads_offs[cur_read]; // read size in bytes
             // logger->log("GPU "+to_string(gpuid)+" Stream "+to_string(i)+":\tread count = "+to_string(gpu_data[i].reads_cnt));
-            logs += "\tS "+to_string(i)+"  #Reads "+to_string(gpu_data[i].reads_cnt);
+            // logs += "\tS "+to_string(i)+"  #Reads "+to_string(gpu_data[i].reads_cnt);
 
             size_S[i] = batch_size[i];
             size_N[i] = gpu_data[i].reads_cnt;
@@ -561,6 +737,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
 
         for (i = 0; i < started_streams; i++) {
             CUDA_CHECK(cudaStreamSynchronize(streams[i])); // wait for cudamalloc
+            // timep1[0].fetch_add(wct.breakpoint(true));
             
             // // reads (data, offs, len, hpc), minmers, skms (offs, part_byte, cnt) // ~ 5000 reads / GB
             // CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_reads), sizeof(u_char) * (batch_size[i]+8), streams[i]));// +8 for uchar4 access overflow // 8192 threads(reads) * 20 KB/read     = 160MB VRAM
@@ -578,8 +755,8 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             gpu_data[i].d_skm_offs  = reinterpret_cast<T_read_len*>     (vec_d_mmskmreads[i].get(sizeof(T_minimizer)*size_S[i]));
             gpu_data[i].d_reads     = reinterpret_cast<unsigned char*>  (vec_d_mmskmreads[i].get((sizeof(T_minimizer)+sizeof(T_read_len))*size_S[i]));
             
-            gpu_data[i].d_read_offs = reinterpret_cast<T_CSR_cap*>  (vec_d_rlenroffs[i].get(4*size_N[i]));
-            gpu_data[i].d_read_len  = reinterpret_cast<T_read_len*> (vec_d_rlenroffs[i].get());
+            gpu_data[i].d_read_offs = reinterpret_cast<T_CSR_cap*>  (vec_d_rlenroffs[i].get());
+            gpu_data[i].d_read_len  = reinterpret_cast<T_read_len*> (vec_d_rlenroffs[i].get(sizeof(T_CSR_cap)*(size_N[i]+1)));
             
             gpu_data[i].d_skm_part_bytes= reinterpret_cast<T_skm_partsize*> (vec_d_partinfo[i].get());
             gpu_data[i].d_skm_cnt       = reinterpret_cast<T_skm_partsize*> (vec_d_partinfo[i].get(sizeof(T_skm_partsize)*size_P[i]));
@@ -656,6 +833,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
         // ==== Calc SKM Partition Sizes and Extract SKMs ====
         for (i = 0; i < started_streams; i++) {
             CUDA_CHECK(cudaStreamSynchronize(streams[i])); // for host skm_part_bytes and skm_cnt
+            // timep1[1].fetch_add(wct.breakpoint(true));
             #ifdef MMFILTER_TIMING
             cudaEventElapsedTime(&time_filter_stream, start[i], stop[i]);
             time_filter += time_filter_stream;
@@ -671,10 +849,11 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 host_data[i].tot_skm_bytes += host_data[i].skm_part_bytes[j];
             }
             // ---- cudaMalloc skm store ----
-            vec_d_skmpart[i].use(host_data[i].tot_skm_bytes, true);
+            vec_d_skmpart[i].use(host_data[i].tot_skm_bytes, streams[i], true);
         }
         for (i = 0; i < started_streams; i++) {
             CUDA_CHECK(cudaStreamSynchronize(streams[i])); // for vec_d_skmpart[i].use
+            // timep1[2].fetch_add(wct.breakpoint(true));
             gpu_data[i].d_skm_store_csr = (u_char*)vec_d_skmpart[i].get();
             // ---- memcpy skm part sizes and offsets to gpu ----
             // CUDA_CHECK(cudaMallocAsync((void**) &(gpu_data[i].d_skm_store_csr), host_data[i].tot_skm_bytes, streams[i]));
@@ -719,31 +898,51 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             // CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_skmpart_offs, streams[i]));
         }
         // ==== CPU Store SKMs ====
+        thread_local std::future<void> fut[GlobalParams::MAX_STREAMS];
         for (i = 0; i < started_streams; i++) {
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
-            // process_func(host_data[i]);
-            SKMStoreNoncon::save_batch_skms (skm_partition_stores, host_data[i].skm_cnt, host_data[i].kmer_cnt, host_data[i].skmpart_offs, host_data[i].skm_store_csr);
-            // TODO: move above out for better pipelining
-
-            // -- clean host variables --
-            if (HPC) {
-                // delete [] host_data[i].hpc_orig_pos;//
-                delete [] host_data[i].read_len;//
-            }
+            // timep1[3].fetch_add(wct.breakpoint(true));
+            // method 1: post processing
+            // SKMStoreNoncon::save_batch_skms (skm_partition_stores, host_data[i].skm_cnt, host_data[i].kmer_cnt, host_data[i].skmpart_offs, host_data[i].skm_store_csr);
             
-            delete [] host_data[i].skm_part_bytes;//1
-            delete [] host_data[i].skm_cnt;//2
-            delete [] host_data[i].kmer_cnt;//3
-            delete [] host_data[i].skmpart_offs;//
-            // if (write to file) delete [] host_data[i].skm_store_csr;// will not be deleted until program ends
+            // // -- clean host variables --
+            // if (HPC) {
+            //     // delete [] host_data[i].hpc_orig_pos;//
+            //     delete [] host_data[i].read_len;//
+            // }
+            
+            // delete [] host_data[i].skm_part_bytes;//1
+            // delete [] host_data[i].skm_cnt;//2
+            // delete [] host_data[i].kmer_cnt;//3
+            // delete [] host_data[i].skmpart_offs;//
+            // // if (write to file) delete [] host_data[i].skm_store_csr;// will not be deleted until program ends
+
+            // method 2: async post processing
+            T_skm_partsize *skm_part_bytes = host_data[i].skm_part_bytes;
+            T_skm_partsize *skm_cnt = host_data[i].skm_cnt;
+            T_skm_partsize *kmer_cnt = host_data[i].kmer_cnt;
+            T_CSR_cap *skmpart_offs = host_data[i].skmpart_offs;
+            u_char *skm_store_csr = host_data[i].skm_store_csr; // will not be deleted until program ends
+            if (fut[i].valid()) fut[i].get();
+            fut[i] = std::async(
+                std::launch::async, 
+                [skm_part_bytes, skm_cnt, kmer_cnt, skmpart_offs, skm_store_csr, &skm_partition_stores](){
+                    SKMStoreNoncon::save_batch_skms (skm_partition_stores, skm_cnt, kmer_cnt, skmpart_offs, skm_store_csr);
+                    delete [] skm_part_bytes;//1
+                    delete [] skm_cnt;//2
+                    delete [] kmer_cnt;//3
+                    delete [] skmpart_offs;//
+                }
+            );
         }
     }
-    for (i=0; i<gpars.n_streams; i++)
-        CUDA_CHECK(cudaStreamDestroy(streams[i]));
+    // for (i=0; i<gpars.n_streams; i++)
+    //     CUDA_CHECK(cudaStreamDestroy(streams[i]));
     
-    logger->log(logs);
+    // logger->log(logs);
     #ifdef MMFILTER_TIMING
-    mm_filter_tot_time += int(time_filter);
+    mm_filter_tot_time.fetch_add(int(time_filter));
     // logger->log("FILTER: " STR(FILTER_KERNEL) " Kernel Functions Time: "+to_string(time_filter)+" sec", Logger::LV_INFO);
     #endif
+    // timep1[4].fetch_add(wct_all.breakpoint(true));
 }

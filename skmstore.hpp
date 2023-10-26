@@ -14,6 +14,14 @@
 #include <iostream>
 // #define DEBUG
 #include <cassert>
+
+#ifdef MMAP
+#include <fcntl.h>      // open
+#include <sys/mman.h>   // mmap
+#include <sys/stat.h>   // fstat
+#include <unistd.h>     // close
+#endif
+
 using namespace std;
 
 struct SKM {
@@ -71,6 +79,9 @@ public:
     int flush_cnt = 0;
 
     u_char* skms_from_file = nullptr;
+    #ifdef MMAP
+    bool mmap_success = true;
+    #endif
 
     // no compression
     #ifdef SKMSTOREV1
@@ -102,12 +113,29 @@ public:
     void load_from_file() {
         data_mtx.lock();
         if (skms_from_file == nullptr) {
+            #ifdef MMAP
+            // load file with mmap
+            int fd = open(filename.c_str(), O_RDONLY);
+            assert(fd != -1);
+            skms_from_file = (u_char*) mmap(NULL, tot_size_bytes, PROT_READ, MAP_SHARED, fd, 0);
+            close(fd);
+            if (skms_from_file == MAP_FAILED) {
+                FILE* myfp;
+                myfp = fopen(filename.c_str(), "rb");
+                assert(myfp);
+                skms_from_file = new u_char[tot_size_bytes];
+                assert(fread(skms_from_file, 1, tot_size_bytes, myfp) == tot_size_bytes);
+                fclose(myfp);
+                mmap_success = false;
+            }
+            #else
             FILE* myfp;
             myfp = fopen(filename.c_str(), "rb");
             assert(myfp);
             skms_from_file = new u_char[tot_size_bytes];
             assert(fread(skms_from_file, 1, tot_size_bytes, myfp) == tot_size_bytes);
             fclose(myfp);
+            #endif
         }
         data_mtx.unlock();
         return;
@@ -152,7 +180,6 @@ public:
     /// @brief add skms directly from a chunk (FOR GPU GENERATED SKMS, NO DELETE AFTER)
     /// @param skms_chunk the chunk which stores multiple skms
     /// @param data_bytes the uncompressed size in bytes of this chunk
-    /// @param compressed_bytes the compressed size in bytes of this chunk
     void add_skms (u_char* skms_chunk, size_t data_bytes, size_t b_skm_cnt, size_t b_kmer_cnt/*, size_t compressed_bytes = 0*/, u_char* delete_data = nullptr) {
         #ifdef SKMSTOREV1
         data_mtx.lock();
@@ -166,6 +193,7 @@ public:
             #endif
             _write_to_file (skms_chunk, data_bytes);
             // fw->write(skms_chunk, data_bytes, this->fp, delete_data);
+            if (delete_data != nullptr) delete [] delete_data;
             #ifndef SKMSTOREV1
             // data_mtx.unlock();
             #endif
@@ -252,7 +280,7 @@ public:
         u_char *tmp;
         if (skms_store->to_file) {
             skms_store->_add_skms_to_file(skm_data, data_bytes, skm_cnt, kmer_cnt, flush);
-            // delete [] skm_data;
+            delete [] skm_data;
         } else if (data_bytes < buf_size * 0.9) { // TODO: space or time
             tmp = new u_char [data_bytes];
             memcpy(tmp, skm_data, data_bytes);

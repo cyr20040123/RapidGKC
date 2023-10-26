@@ -13,4 +13,8 @@ size_t KmerCountingCPU(T_kvalue k,
     SKMStoreNoncon *skms_store,
     T_kmer_cnt kmer_min_freq, T_kmer_cnt kmer_max_freq,
     _out_ std::vector<T_kmc> &kmc_result_curpart, int tid, int threads_cpu_sorter = 1);
+
+void CalcMMHisto(vector<ReadPtr> &reads, CUDAParams &gpars, int tid);
+
+unsigned int* GenDict(unsigned int parts, T_kvalue p, int samplereads, std::atomic<unsigned long long>* mm_histo_h, unsigned long long **mm_histo, int n_devices);
 #endif

@@ -45,7 +45,7 @@ public:
         #ifdef WAITMEASURE
         // if (!_cv.wait_for(lck, 200ms, [this, size_thr](){return this->_size < size_thr;})) // true: finish waiting, false: timeout
         //     debug_push_wait++;
-        _cv.wait_for(lck, 500ms, [this, size_thr]() {
+        _cv.wait_for(lck, 150ms, [this, size_thr]() {
             if (this->_size >= size_thr) {this->debug_push_wait++; return false;}
             else return true;
         });
@@ -54,7 +54,7 @@ public:
         //     else return true;
         // }); i++);
         #else
-        _cv.wait_for(lck, 500ms, [this, size_thr](){return this->_size < size_thr;});
+        _cv.wait_for(lck, 150ms, [this, size_thr](){return this->_size < size_thr;});
         // for (int i=0; i<8 && !_cv.wait_for(lck, 250ms, [this, size_thr](){return this->_size < size_thr;}); i++);
         #endif
         _Q.push_back(std::move(item));

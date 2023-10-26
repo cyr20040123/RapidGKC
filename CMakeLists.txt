@@ -11,7 +11,7 @@ project(RapidGKC LANGUAGES CXX CUDA)
 # cmake -DCMAKE_CUDA_COMPILER="C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v10.1/bin/nvcc.exe"
 
 # ** Link Pthread and set C++ std **
-set(CMAKE_CXX_FLAGS "${CAMKE_CXX_FLAGS} -std=c++14 -lpthread -lz -O2") # NVCC will use the same flag in CMAKE_CXX_FLAGS? Seems not
+# set(CMAKE_CXX_FLAGS "${CAMKE_CXX_FLAGS} -std=c++14 -lpthread -lz -O2 -lstdc++fs") # NVCC will use the same flag in CMAKE_CXX_FLAGS? Seems not
 set(CUDA_NVCC_FLAGS "-std=c++14 -lpthread -lz -O2 -arch=native")
 # set(CMAKE_CXX_STANDARD 14)
 # set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
@@ -57,13 +57,13 @@ message("${CMAKE_CUDA_ARCHITECTURES}")
 cuda_add_executable(${DEFAULT_EXECUTABLE_NAME} ${SRC_FILES})
 target_link_libraries(${DEFAULT_EXECUTABLE_NAME} z)
 
-cuda_add_executable(${LONG_EXECUTABLE_NAME} ${SRC_FILES})
-target_link_libraries(${LONG_EXECUTABLE_NAME} z)
-target_compile_definitions(${LONG_EXECUTABLE_NAME} PRIVATE LONGERKMER)
+# cuda_add_executable(${LONG_EXECUTABLE_NAME} ${SRC_FILES})
+# target_link_libraries(${LONG_EXECUTABLE_NAME} z)
+# target_compile_definitions(${LONG_EXECUTABLE_NAME} PRIVATE LONGERKMER)
 
-cuda_add_executable(${SHORT_EXECUTABLE_NAME} ${SRC_FILES})
-target_link_libraries(${SHORT_EXECUTABLE_NAME} z)
-target_compile_definitions(${SHORT_EXECUTABLE_NAME} PRIVATE SHORTERKMER)
+# cuda_add_executable(${SHORT_EXECUTABLE_NAME} ${SRC_FILES})
+# target_link_libraries(${SHORT_EXECUTABLE_NAME} z)
+# target_compile_definitions(${SHORT_EXECUTABLE_NAME} PRIVATE SHORTERKMER)
 
 # add_executable()
 

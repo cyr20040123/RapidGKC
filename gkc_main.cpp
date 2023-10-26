@@ -6,7 +6,11 @@
 #include <algorithm>
 #include <bits/stdc++.h>
 // #include "read_loader_V2.hpp"
+#ifdef MMAP
+#include "fileloader_mmap.hpp"
+#else
 #include "fileloader.hpp"
+#endif
 // #include "fileloader_gz.hpp"
 #include "cpu_funcs.h"
 #include "gpu_skmgen.h"
@@ -16,6 +20,14 @@
 #ifdef MMFILTER_TIMING
 #include "minimizer_filter.h"
 #endif
+
+static std::string GetFileNameFromPath(std::string fullpath) {
+    // convert full path to filename not using std::filesystem
+    std::string filename = fullpath;
+    size_t pos = fullpath.find_last_of("/\\");
+    if (pos != std::string::npos) filename = fullpath.substr(pos+1);
+    return filename;
+}
 
 using namespace std;
 
@@ -48,19 +60,34 @@ size_t calVarStdev(vector<size_t> &vecNums) // calc avg max min var std cv (Coef
     return max_val;
 }
 
+void phase0calchisto(vector<ReadPtr> &reads, CUDAParams &gpars, int tid) {
+    if ((!PAR.GPU_only) && (PAR.CPU_only || tid >= gpars.n_devices * gpars.max_threads_per_gpu)) {
+        logger->log("batch reads for mm histo: "+to_string(reads.size())+" on CPU", Logger::LV_DEBUG);
+        CalcMMHisto(reads, gpars, tid);
+    } else {
+        PinnedCSR pinned_reads(reads);
+        int gpuid = (tid / gpars.max_threads_per_gpu) % (PAR.n_devices); // no need to mod
+        logger->log("batch reads for mm histo: "+to_string(reads.size())+" on GPU"+to_string(gpuid), Logger::LV_DEBUG);
+        GenMMHistoGPU (pinned_reads, PAR.K_kmer, PAR.P_minimizer, PAR.HPC, gpars, tid, gpuid);
+    }
+}
+
+// std::atomic<int> phase1_all{0};
 void phase1(vector<ReadPtr> &reads, CUDAParams &gpars, vector<SKMStoreNoncon*> &skm_partition_stores, int tid) {
+    // WallClockTimer p1_all;
     if ((!PAR.GPU_only) && (PAR.CPU_only || tid >= gpars.n_devices * gpars.max_threads_per_gpu)) {
         // call CPU splitter
         GenSuperkmerCPU (reads, PAR.K_kmer, PAR.P_minimizer, false, PAR.SKM_partitions, skm_partition_stores, tid);
     } else { // use GPU splitter
         // sort(reads.begin(), reads.end(), sort_comp); // TODO: remove and compare the performance
         PinnedCSR pinned_reads(reads);
-        stringstream ss;
-        ss << "-- BATCH  GPU: #reads: " << reads.size() << "\tmin_len = " << reads.begin()->len << "\tmax_len = " << reads.rbegin()->len <<"\tsize = " << pinned_reads.size_capacity << "\t--";
-        logger->log(ss.str());
         int gpuid = (tid / gpars.max_threads_per_gpu) % (PAR.n_devices); // no need to mod
+        // stringstream ss;
+        // ss << "-- BATCH  GPU"<<gpuid<<": #reads: " << reads.size() << "\tmin_len = " << reads.begin()->len << "\tmax_len = " << reads.rbegin()->len <<"\tsize = " << pinned_reads.size_capacity << "\t--";
+        // logger->log(ss.str());
         GenSuperkmerGPU (pinned_reads, PAR.K_kmer, PAR.P_minimizer, false, gpars, PAR.SKM_partitions, skm_partition_stores, tid, gpuid);
     }
+    // phase1_all.fetch_add(p1_all.stop(true));
 }
 
 std::atomic<int> cpu_p2_cnt{0};
@@ -74,7 +101,7 @@ size_t phase2 (int tid, vector<SKMStoreNoncon*> store_vec, CUDAParams &gpars, ve
         if (store_vec[0]->id > PAR.SKM_partitions - PAR.N_threads - 2) cerr<<"\r100%";
     }
     size_t res = 0;
-    if ((!PAR.GPU_only) && (PAR.CPU_only || tid >= gpars.n_devices * gpars.max_threads_per_gpu_p2 + gput_run_cpu_cnt)) {
+    if ((!PAR.GPU_only) && (PAR.CPU_only || tid >= gpars.n_devices * gpars.max_threads_per_gpu_p2 /*+ gput_run_cpu_cnt*/)) {
         for (auto i: store_vec)
             res += KmerCountingCPU(PAR.K_kmer, i, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[i->id], tid, PAR.threads_cpu_sorter);
         cpu_p2_cnt.fetch_add(store_vec.size());
@@ -116,11 +143,13 @@ void KmerCounting_TP(CUDAParams &gpars) {
     if (*(PAR.read_files[0].rbegin()) == 'z' || *(PAR.read_files[0].rbegin()) == 'Z') { // gz files
         GZReadLoader::work_while_loading_gz(PAR.K_kmer,
             [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){phase1(reads, gpars, skm_part_vec, tid);},
-            PAR.N_threads, PAR.read_files, PAR.threads_gz, PAR.Batch_read_loading, PAR.Buffer_size_MB*PAR.N_threads);
+            [&gpars](vector<ReadPtr> &reads, int tid){phase0calchisto(reads, gpars, tid);},
+            PAR.N_threads, PAR.read_files, PAR.threads_gz, PAR.Batch_read_loading, PAR.Buffer_size_MB*PAR.N_threads, 16, PAR.MM_histo);
     } else {
         ReadLoader::work_while_loading(PAR.K_kmer,
             [&gpars, &skm_part_vec](vector<ReadPtr> &reads, int tid){phase1(reads, gpars, skm_part_vec, tid);},
-            PAR.N_threads, PAR.read_files, PAR.Batch_read_loading, PAR.Buffer_size_MB*PAR.N_threads);
+            [&gpars](vector<ReadPtr> &reads, int tid){phase0calchisto(reads, gpars, tid);},
+            PAR.N_threads, PAR.read_files, PAR.Batch_read_loading, PAR.Buffer_size_MB*PAR.N_threads, 16, PAR.MM_histo);
     }
 
     size_t skm_tot_cnt = 0, skm_tot_bytes = 0, kmer_tot_cnt = 0;
@@ -128,10 +157,17 @@ void KmerCounting_TP(CUDAParams &gpars) {
         kmer_tot_cnt += skm_part_vec[i]->kmer_cnt;
         skm_tot_cnt += skm_part_vec[i]->skm_cnt;
         skm_tot_bytes += skm_part_vec[i]->tot_size_bytes;
-        if (PAR.to_file) skm_part_vec[i]->close_file();
+        if (skm_part_vec[i]->to_file) skm_part_vec[i]->close_file();
     }
     
     double p1_time = wct1.stop();
+    // extern std::atomic<int> timep1[5];
+    // cerr << "timep1: " << timep1[0] << " " << timep1[1] << " " << timep1[2] << " " << timep1[3] << " " << timep1[4] << endl;
+    // cerr << "phase1_all: " << phase1_all << endl;
+    // extern std::atomic<int> pinned_create;
+    // extern std::atomic<int> pinned_copy;
+    // // extern std::atomic<int> pinned_free;
+    // cerr << "(make sure only 1 stream/thread) pinned_create: " << pinned_create << " pinned_copy: " << pinned_copy/* << " pinned_free: " << pinned_free*/ << endl;
     #ifdef MMFILTER_TIMING
     logger->log("FILTER: " STR(FILTER_KERNEL) " Kernel Functions Time: "+to_string(mm_filter_tot_time)+" ms", Logger::LV_INFO);
     #endif
@@ -142,22 +178,50 @@ void KmerCounting_TP(CUDAParams &gpars) {
     logger->log("KMER TOT CNT = " + to_string(kmer_tot_cnt), Logger::LV_NOTICE);
 
     vector<size_t> partition_sizes;
-    for(i=0; i<PAR.SKM_partitions; i++) partition_sizes.push_back(skm_part_vec[i]->tot_size_bytes);
+    for(i=0; i<PAR.SKM_partitions; i++) partition_sizes.push_back(skm_part_vec[i]->kmer_cnt);
     calVarStdev(partition_sizes);
     size_t avg_part_kmers = kmer_tot_cnt / PAR.SKM_partitions;
     
     // std::cout<<"Continue? ..."; char tmp; cin>>tmp;
     // GPUReset(gpars.device_id);
     // if (PAR.to_file) exit(0);
+
+    // #define OUTPUT_MMHISTO
+    #ifdef OUTPUT_MMHISTO
+    // output minimizer histogram to file
+    #ifdef CANO_FILTER
+        string tname="cano";
+    #else
+        #ifdef SIGN_FILTER
+        string tname="sign";
+        #else
+        string tname="rapidgkc";
+        #endif
+    #endif
+    extern unsigned long long *all_histo;
+    FILE *fp = fopen((GetFileNameFromPath(PAR.read_files[0])+to_string(PAR.read_files.size())+"-"+tname+"_"+to_string(PAR.K_kmer)+"-"+to_string(PAR.P_minimizer)+".mmhisto").c_str(), "wb");
+    cerr<<"writing mmhisto to file... "<<fp<<endl;
+    for (T_minimizer ii=0; ii<1<<(PAR.P_minimizer*2); ii++) {
+        unsigned long long tt = all_histo[ii];
+        fwrite(&tt, sizeof(unsigned long long), 1, fp);
+    }
+    fclose(fp);
+    exit(0);
+    #endif
     
+    for (int i=0; i<gpars.n_devices; i++) {
+        gpars.vram.push_back(GPUReset(i)); // must before not after pinned memory allocation
+        cerr<<"GPU "<<i<<" VRAM (MB):"<<*(gpars.vram.rbegin())/MB1<<endl;
+    }
+
     // ===========================================================
     // ==== 2nd phase: superkmer extraction and kmer counting ====
     // ===========================================================
     logger->log("**** Phase 2: Superkmer extraction and kmer counting ****", Logger::LV_NOTICE);
     logger->log("[GPU counter] "+to_string(PAR.max_threads_per_gpu_p2)+ " threads\t* "+to_string(PAR.n_devices)+" GPU(s)");
-    logger->log("[CPU counter] "+to_string(PAR.threads_cpu_sorter)+" threads\t*"      +to_string((PAR.threads_p2 - PAR.max_threads_per_gpu_p2 * PAR.n_devices) / PAR.threads_cpu_sorter)+" CPU worker(s)");
+    logger->log("[CPU counter] "+to_string(PAR.threads_cpu_sorter)+" threads\t* "     +to_string((PAR.threads_p2 - PAR.max_threads_per_gpu_p2 * PAR.n_devices) / PAR.threads_cpu_sorter)+" CPU worker(s)");
     logger->log("Total CPU threads used: "+to_string(PAR.max_threads_per_gpu_p2 * PAR.n_devices + (PAR.threads_p2 - PAR.max_threads_per_gpu_p2*PAR.n_devices)/PAR.threads_cpu_sorter*PAR.threads_cpu_sorter));
-    logger->log("Total GPU workers: "+to_string(PAR.max_threads_per_gpu_p2 * PAR.n_devices)+"\tTotal CPU workers"+to_string((PAR.threads_p2 - PAR.max_threads_per_gpu_p2*PAR.n_devices)/PAR.threads_cpu_sorter));
+    logger->log("Total GPU workers: "+to_string(PAR.max_threads_per_gpu_p2 * PAR.n_devices)+"\tTotal CPU workers: "+to_string((PAR.threads_p2 - PAR.max_threads_per_gpu_p2*PAR.n_devices)/PAR.threads_cpu_sorter));
     cerr<<endl;
     WallClockTimer wct2;
     
@@ -168,22 +232,28 @@ void KmerCounting_TP(CUDAParams &gpars) {
     
     future<size_t> distinct_kmer_cnt[PAR.SKM_partitions];
     ThreadPool<size_t> tp(n_workers_tp, n_workers_tp + 2); //,{0,PAR.N_threads,0,PAR.max_threads_per_gpu});
+    ThreadPool<size_t> tp_cpu(2, 100);
     ThreadPool<void> tp_fileloader(1); //async file loader
     SKMStoreNoncon *tmp_part;
     int j;
     vector<int> toolarge_bins;
     if (PAR.n_devices == 0) gpars.vram.push_back((size_t)MB1*(size_t)32768);
     for (i=0; i<PAR.SKM_partitions; i=j) {
-        long long vram_avail = gpars.vram[0] / max(1, PAR.max_threads_per_gpu_p2); // vram available for each GPU worker (1 GPU worker = 1 CPU thread)
+        long long vram_avail = gpars.vram[0] / max(1, PAR.max_threads_per_gpu_p2) / PAR.n_streams_p2; // vram available for each GPU worker (1 GPU worker = 1 CPU thread)
         vector<SKMStoreNoncon*> store_vec;
         // group a batch of skm partitions for GPU:
         for (j = i; j < i+max_streams_p2 && j < PAR.SKM_partitions; j++) {
-            size_t vram_required = max((size_t)(skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) * 2.1), skm_part_vec[j]->kmer_cnt * (sizeof(T_kmer) + sizeof(T_kmer_cnt)*2)); // sync calc with gpu_kmercounting.cu
-            vram_required += 128 * MB1;
-            if (vram_avail - vram_required > 0.1 * gpars.vram[0]) {
+            size_t vram_required = max(max(
+                (size_t)(skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) * 2), 
+                skm_part_vec[j]->kmer_cnt * (sizeof(T_kmer) + sizeof(T_kmer_cnt)*2)),
+                (size_t)(skm_part_vec[j]->kmer_cnt * sizeof(T_kmer) + skm_part_vec[j]->tot_size_bytes * 1)
+            ); // sync calc with gpu_kmercounting.cu
+            vram_required = size_t(vram_required * 1.1) + 128 * MB1;
+            // if (vram_avail - vram_required > 0.1 * gpars.vram[0]) {
+            if (vram_avail > vram_required) {
                 store_vec.push_back(skm_part_vec[j]);
                 vram_avail -= vram_required;
-                if (PAR.to_file) { // load currently assigned partition from file
+                if (skm_part_vec[j]->to_file) { // load currently assigned partition from file
                     tp.hold_when_busy();
                     tmp_part = skm_part_vec[j];
                     tp_fileloader.commit_task_no_return([tmp_part](int tid){tmp_part->load_from_file();});
@@ -194,7 +264,7 @@ void KmerCounting_TP(CUDAParams &gpars) {
         { // if VRAM is not enough to handle even one partition, force using CPU
             toolarge_bins.push_back(j);
             SKMStoreNoncon *t = skm_part_vec[j];
-            distinct_kmer_cnt[i] = tp.commit_task([t, &kmc_result](int tid){
+            distinct_kmer_cnt[i] = tp_cpu.commit_task([t, &kmc_result](int tid){
                 return phase2_forceCPU (tid, t, kmc_result);
             });
             j++;
@@ -207,7 +277,7 @@ void KmerCounting_TP(CUDAParams &gpars) {
     if (toolarge_bins.size() > 0) {
         logger->log(to_string(toolarge_bins.size())+" partition(s) are too large to be handled by GPU, use CPU.", Logger::LV_WARNING);
         if (toolarge_bins.size() <= 16) {
-            for (auto i: toolarge_bins) cerr<<"Part-"<<i<<"\t";
+            for (auto i: toolarge_bins) cerr<<"Part-"<<i<<":"<<skm_part_vec[i]->kmer_cnt<<"\t";
             cerr<<endl;
         }
     }
@@ -217,6 +287,7 @@ void KmerCounting_TP(CUDAParams &gpars) {
         logger->log("GPU VRAM LEFT = "+to_string(GPUVram(0)/MB1));
     }
     tp.finish();
+    tp_cpu.finish();
 
     // Gather total distinct k-mer count
     size_t distinct_kmer_cnt_tot = 0;
@@ -228,6 +299,11 @@ void KmerCounting_TP(CUDAParams &gpars) {
     logger->log("Phase 2 processed partitions CPU:GPU = "+to_string(cpu_p2_cnt)+":"+to_string(gpu_p2_cnt), Logger::LV_INFO);
     std::cerr<<endl;
     logger->log("Total number of distinct kmers: "+to_string(distinct_kmer_cnt_tot), Logger::LV_NOTICE);
+
+    // extern std::atomic<int> timer_p2[6];
+    // extern std::atomic<int> timer_p2_all;
+    // cerr<<"Phase 2 timers: "<<timer_p2[0]<<" "<<timer_p2[1]<<" "<<timer_p2[2]<<" "<<timer_p2[3]<<" "<<timer_p2[4]<<" "<<timer_p2[5]<<" [ALL]"<<timer_p2_all<<endl;
+    // cerr<<"Phase 2 copy - deque:"<<timer_p2[6]<<" copy:"<<timer_p2[7]<<endl;
     
     double p2_time = wct2.stop();
     logger->log("**** Kmer counting finished (Phase 2 ends) ****", Logger::LV_NOTICE);

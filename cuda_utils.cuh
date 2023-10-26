@@ -27,7 +27,12 @@ public:
     void *ptr = nullptr;
     size_t size = 0;
     int resize_count = 0;
-    MyDevicePtr(){this->ptr = nullptr; this->size = 0;}
+    MyDevicePtr(){
+        this->ptr = nullptr; this->size = 0;
+        #ifdef NOREUSE
+        logger->log("<MyDevicePtr> NOREUSE mode.", Logger::LV_WARNING);
+        #endif
+    }
     // MyDevicePtr(void *_ptr, size_t _size){this->ptr = _ptr; this->size = _size;}
     ~MyDevicePtr() {
         if (this->ptr != nullptr) { // get rid of CPU threads
@@ -48,6 +53,9 @@ public:
             logger->log("<MyDevicePtr> use size = 0.", Logger::LV_WARNING);
             return;
         }
+        #ifdef NOREUSE
+        this->free();
+        #endif
         if (this->ptr == nullptr) {
             _size = more ? (_size + _size/8) : _size;
             _size = (_size+7)/8*8; // align to 8 bytes
@@ -68,6 +76,9 @@ public:
             logger->log("<MyDevicePtr> use size = 0.", Logger::LV_WARNING);
             return;
         }
+        #ifdef NOREUSE
+        this->free(stream);
+        #endif
         if (this->ptr == nullptr) {
             _size = more ? (_size + _size/8) : _size;
             _size = (_size+7)/8*8; // align to 8 bytes
@@ -92,6 +103,72 @@ public:
         if (this->ptr != nullptr) CUDA_CHECK(cudaFreeAsync(this->ptr, stream));
         this->ptr = nullptr;
         this->size = 0;
+    }
+};
+
+class MyPinnedPtr{
+public:
+    void *ptr = nullptr;
+    size_t size = 0;
+    int resize_count = 0;
+    MyPinnedPtr() {
+        this->ptr = nullptr;
+        this->size = 0;
+    }
+    ~MyPinnedPtr() {
+        this->free();
+    }
+    void* get(size_t _byte_offs=0) {
+        return (void *)(static_cast<char*>(this->ptr) + _byte_offs);
+    }
+    void use(size_t _size, bool more=false) {
+        if (_size == 0) {
+            logger->log("<MyDevicePtr> use size = 0.", Logger::LV_WARNING);
+            return;
+        }
+        if (this->ptr == nullptr) {
+            _size = more ? (_size + _size/4) : _size;
+            _size = (_size+7)/8*8; // align to 8 bytes
+            CUDA_CHECK(cudaHostAlloc(&this->ptr, _size, cudaHostAllocDefault));
+            this->size = _size;
+        }
+        else if (this->size < _size) {
+            _size = more ? (_size + _size/4) : _size;
+            _size = (_size+7)/8*8; // align to 8 bytes
+            this->free();
+            CUDA_CHECK(cudaHostAlloc(&this->ptr, _size, cudaHostAllocDefault));
+            this->resize_count++;
+            this->size = _size;
+        }
+    }
+    void free(){
+        if (this->ptr != nullptr) CUDA_CHECK(cudaFreeHost(this->ptr));
+        this->ptr = nullptr;
+        this->size = 0;
+    }
+};
+
+class MyStreams{
+public:
+    cudaStream_t *streams = nullptr;
+    int size = 0;
+    MyStreams() {
+        streams = new cudaStream_t[GlobalParams::MAX_STREAMS];
+        size = 0;
+    }
+    void use(int _size) {
+        if (this->size < _size) {
+            for (int i=size; i<_size; i++) {
+                CUDA_CHECK(cudaStreamCreate(&this->streams[i]));
+            }
+            this->size = _size;
+        }
+    }
+    ~MyStreams() {
+        for (int i=0; i<size; i++) {
+            CUDA_CHECK(cudaStreamDestroy(streams[i]));
+        }
+        delete [] streams;
     }
 };
 
